@@ -518,7 +518,7 @@ async function processPage(page) {
     formData.append("useful_page_number", String(page.usefulPageNumber));
     formData.append("total_useful_pages", String(page.totalUsefulPages));
 
-    const response = await fetch(CONFIG.PROCESS_WEBHOOK_URL, {
+    const response = await fetch(CONFIG.PROCESS_WEBHOOK_URL, window.location.origin, {
       method: "POST",
       body: formData,
       credentials: "omit",
@@ -908,7 +908,7 @@ async function saveResults() {
   try {
     // A UI fica bloqueada (botão desabilitado via state.isSaving) até o
     // webhook responder — só seguimos adiante depois do await abaixo.
-    const response = await fetch(CONFIG.SAVE_WEBHOOK_URL, {
+    const response = await fetch(CONFIG.SAVE_WEBHOOK_URL, window.location.origin, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(buildSavePayload()),
@@ -1051,7 +1051,7 @@ async function checkWorkflowHealth() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.HEALTHCHECK_TIMEOUT_MS);
   try {
-    const url = new URL(CONFIG.HEALTHCHECK_URL);
+    const url = URL(CONFIG.HEALTHCHECK_URL, window.location.origin);
     url.searchParams.set("_healthcheck", Date.now().toString());
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
