@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Processamento e revisão da grade de filmes.">
+  <title>FilmeBOT 9000</title>
+
+  <link rel="icon" type="image/png" href="./favicon.png">
+  <link rel="apple-touch-icon" href="./favicon.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+  <main id="app-shell" class="app-shell phase-upload">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="PROMO Workflows">
+        <strong>PROMO</strong>
+        <small>workflows</small>
+      </a>
+
+      <span id="connection-status" class="connection-status is-checking" role="status" aria-live="polite">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span id="connection-status-label">Verificando...</span>
+      </span>
+    </header>
+
+    <div class="workspace">
+      <section id="source-side" class="source-side">
+        <div class="source-background" aria-hidden="true"></div>
+
+        <div id="upload-view" class="upload-view">
+          <header class="hero">
+            <p class="eyebrow">Versão 3.1</p>
+            <h1>FilmeBOT 9000</h1>
+            <p class="hero-description">
+              Envie a prévia de filmes em PDF e revise as informações extraídas.
+            </p>
+          </header>
+
+          <section id="upload-panel" class="upload-panel" aria-labelledby="upload-title">
+            <h2 id="upload-title" class="visually-hidden">Selecionar grade em PDF</h2>
+
+            <div id="drop-zone" class="drop-zone" tabindex="0" role="button"
+              aria-label="Selecionar ou arrastar arquivo PDF">
+              <input id="file-input" class="visually-hidden" type="file" accept=".pdf,application/pdf">
+
+              <div class="upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 32 32">
+                  <path class="clapper-fill" d="M5.5 6.5 26 3.5l1.2 7.2-20.5 3z"></path>
+                  <path
+                    d="M10 5.8 14.1 12.4M17.2 4.8 21.3 11.4M24.2 3.8 27.2 8.6M6.7 13.7h20.5v13.2H6.7zM11 18.2h12M11 22.1h8">
+                  </path>
+                </svg>
+                <span>↑</span>
+              </div>
+
+              <p id="drop-zone-title" class="drop-zone-title">Solte a grade aqui</p>
+              <p id="drop-zone-description" class="drop-zone-description">Selecione um arquivo PDF para iniciar.</p>
+              <button id="select-file-button" class="button button-upload" type="button">Selecionar PDF</button>
+              <small id="upload-limit" class="upload-limit">PDF · Limite de 50 MB</small>
+            </div>
+
+            <div id="validation-messages" class="validation-messages" aria-live="polite"></div>
+          </section>
+        </div>
+
+        <section id="preview-view" class="preview-view" hidden>
+          <header class="preview-header">
+            <div class="preview-document-info">
+              <p>Documento original</p>
+              <h2 id="preview-file-name">grade.pdf</h2>
+            </div>
+            <span id="preview-page-label" class="page-pill">Página 2</span>
+          </header>
+
+          <div id="preview-stage" class="preview-stage">
+            <canvas id="preview-canvas"></canvas>
+
+            <div id="scan-overlay" class="scan-overlay" aria-hidden="true" hidden>
+              <span class="scan-beam"></span>
+              <span class="scan-message">
+                <i></i>
+                <span id="scan-message-label">Lendo página…</span>
+              </span>
+            </div>
+
+            <div id="preview-loading" class="preview-loading" hidden>Renderizando página…</div>
+          </div>
+
+          <section id="processing-progress" class="processing-progress" aria-label="Progresso do processamento">
+            <div class="processing-progress-header">
+              <strong id="progress-description">Nenhuma página processada</strong>
+              <span id="progress-percentage">0%</span>
+            </div>
+            <div id="progress-track" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+              aria-valuenow="0">
+              <div id="progress-bar" class="progress-bar"></div>
+            </div>
+          </section>
+
+          <footer class="preview-footer">
+            <button id="previous-page-button" class="icon-button" type="button" aria-label="Página anterior">←</button>
+            <p id="preview-status-message">Preparando páginas…</p>
+            <button id="next-page-button" class="icon-button" type="button" aria-label="Próxima página">→</button>
+          </footer>
+        </section>
+
+        <div id="source-information" class="source-information">
+          <span>Primeira e última páginas são ignoradas por padrão</span>
+          <!-- <span>Separação local do PDF</span> -->
+        </div>
+      </section>
+
+      <section id="results-side" class="results-side" aria-labelledby="results-title" aria-hidden="true">
+        <div class="results-toolbar">
+          <header class="results-header">
+            <div>
+              <p class="section-eyebrow">Área operacional</p>
+              <h2 id="results-title">Programação extraída</h2>
+              <p id="queue-state-message">Aguardando o processamento.</p>
+            </div>
+
+            <div class="queue-actions">
+              <button id="save-button" class="button button-primary button-compact" type="button" disabled>Enviar
+                para o Trello</button>
+              <button id="retry-all-button" class="button button-secondary button-compact" type="button" hidden>Reenviar
+                erros</button>
+
+              <details class="actions-menu">
+                <summary class="button button-secondary button-compact">Mais ações <span aria-hidden="true">⌄</span>
+                </summary>
+                <div class="menu-popover">
+                  <button id="cancel-waiting-button" type="button" disabled>Cancelar páginas pendentes</button>
+                  <button id="replace-pdf-button" type="button" disabled>Selecionar outro PDF</button>
+                  <hr>
+                  <button id="clear-button" class="danger-action" type="button" disabled>Limpar resultados</button>
+                </div>
+              </details>
+            </div>
+          </header>
+
+          <p id="save-state-message" class="save-state-message" role="status" aria-live="polite" hidden></p>
+        </div>
+
+        <div id="page-groups" class="page-groups" aria-live="polite"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"
+    referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" crossorigin="anonymous"
+    referrerpolicy="no-referrer"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>
