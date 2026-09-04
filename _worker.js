@@ -3,28 +3,33 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/process") {
-      return forwardToN8N(request, env.N8N_PROCESS_WEBHOOK_URL, env);
+      return forwardToN8N(request, env.N8N_PROCESS_WEBHOOK_URL);
     }
 
     if (url.pathname === "/api/save") {
-      return forwardToN8N(request, env.N8N_SAVE_WEBHOOK_URL, env);
+      return forwardToN8N(request, env.N8N_SAVE_WEBHOOK_URL);
     }
 
     if (url.pathname === "/api/healthcheck") {
-      return forwardToN8N(request, env.N8N_HEALTHCHECK_URL, env);
+      return forwardToN8N(request, env.N8N_HEALTHCHECK_URL);
     }
 
     return env.ASSETS.fetch(request);
   },
 };
 
-async function forwardToN8N(request, webhookUrl, env) {
+async function forwardToN8N(request, webhookUrl) {
   if (!webhookUrl) {
     return new Response(
-      JSON.stringify({ ok: false, error: "WEBHOOK_SECRET_AUSENTE" }),
+      JSON.stringify({
+        ok: false,
+        error: "WEBHOOK_SECRET_AUSENTE",
+      }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       }
     );
   }
@@ -36,9 +41,6 @@ async function forwardToN8N(request, webhookUrl, env) {
     headers.delete("content-length");
     headers.delete("origin");
     headers.delete("referer");
-
-    headers.set("CF-Access-Client-Id", env.CF_ACCESS_CLIENT_ID);
-    headers.set("CF-Access-Client-Secret", env.CF_ACCESS_CLIENT_SECRET);
 
     const response = await fetch(webhookUrl, {
       method: request.method,
@@ -58,11 +60,15 @@ async function forwardToN8N(request, webhookUrl, env) {
       JSON.stringify({
         ok: false,
         error: "ERRO_AO_ACESSAR_WEBHOOK",
-        message: error instanceof Error ? error.message : String(error),
+        message: error instanceof Error
+          ? error.message
+          : String(error),
       }),
       {
         status: 502,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       }
     );
   }
