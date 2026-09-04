@@ -9,10 +9,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const CONFIG = Object.freeze({
-  PROCESS_WEBHOOK_URL: "/api/process",
-  SAVE_WEBHOOK_URL: "/api/save",
-  HEALTHCHECK_URL: "/api/healthcheck",
-
+  PROCESS_WEBHOOK_URL: "****",
+  SAVE_WEBHOOK_URL: "****",
+  HEALTHCHECK_URL: "****",
   FILE_FIELD_NAME: "page",
   SEND_INTERVAL_MS: 2500,
   PROCESS_TIMEOUT_MS: 240000,
@@ -21,7 +20,6 @@ const CONFIG = Object.freeze({
   HEALTHCHECK_TIMEOUT_MS: 5000,
   MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024
 });
-
 
 const APP_PHASE = Object.freeze({
   UPLOAD: "upload",
@@ -1051,7 +1049,7 @@ async function checkWorkflowHealth() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.HEALTHCHECK_TIMEOUT_MS);
   try {
-    const url = new URL(CONFIG.HEALTHCHECK_URL, window.location.origin);
+    const url = new URL(CONFIG.HEALTHCHECK_URL);
     url.searchParams.set("_healthcheck", Date.now().toString());
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
