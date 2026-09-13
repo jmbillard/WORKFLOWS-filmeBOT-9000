@@ -59,11 +59,23 @@
               <p id="drop-zone-title" class="drop-zone-title">Solte a grade aqui</p>
               <p id="drop-zone-description" class="drop-zone-description">Selecione um arquivo PDF para iniciar.</p>
               <button id="select-file-button" class="button button-upload" type="button">Selecionar PDF</button>
-              <small id="upload-limit" class="upload-limit">PDF · Limite de 50 MB</small>
+
+              <div class="format-list" aria-label="Formato aceito">
+                <span>PDF</span>
+              </div>
+
+              <small id="upload-limit" class="upload-limit">Limite de 50 MB</small>
             </div>
 
             <div id="validation-messages" class="validation-messages" aria-live="polite"></div>
           </section>
+
+          <div id="source-information" class="source-information">
+            <span>
+              <span class="information-icon">✓</span>
+              Primeira e última páginas são ignoradas por padrão
+            </span>
+          </div>
         </div>
 
         <section id="preview-view" class="preview-view" hidden>
@@ -106,11 +118,6 @@
             <button id="next-page-button" class="icon-button" type="button" aria-label="Próxima página">→</button>
           </footer>
         </section>
-
-        <div id="source-information" class="source-information">
-          <span>Primeira e última páginas são ignoradas por padrão</span>
-          <!-- <span>Separação local do PDF</span> -->
-        </div>
       </section>
 
       <section id="results-side" class="results-side" aria-labelledby="results-title" aria-hidden="true">

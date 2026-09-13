@@ -45,12 +45,18 @@ html {
 }
 
 body {
+  --mouse-x: 10%;
+  --mouse-y: 5%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
   padding: 24px;
   background:
-    radial-gradient(ellipse at 10% 5%, rgb(255 255 255/18%), transparent 30%),
+    radial-gradient(ellipse at var(--mouse-x) var(--mouse-y), rgb(255 255 255/18%), transparent 30%),
     radial-gradient(ellipse at 90% 90%, rgb(139 175 255/17%), transparent 34%),
     linear-gradient(145deg, var(--blue-400), var(--blue-500) 45%, var(--blue-600));
   color: var(--text-primary);
@@ -115,6 +121,27 @@ button:disabled {
   background: rgb(255 255 255/97%);
   box-shadow: var(--shadow-shell);
   animation: shell-in .65s var(--ease-enter) both;
+  transition:
+    width 700ms var(--ease-enter),
+    height 700ms var(--ease-enter);
+}
+
+/*
+ * Antes do primeiro processamento começar, o card fica menor e
+ * centralizado — só a área de envio é relevante nesse momento.
+ */
+.app-shell.phase-upload {
+  width: min(760px, 100%);
+  height: auto;
+  min-height: auto;
+}
+
+.app-shell.phase-upload .results-side {
+  display: none;
+}
+
+.app-shell.phase-upload .workspace {
+  grid-template-rows: min-content;
 }
 
 /* =========================================================
@@ -210,6 +237,7 @@ button:disabled {
    ========================================================= */
 
 .source-side {
+  container-type: inline-size;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -218,6 +246,16 @@ button:disabled {
     radial-gradient(ellipse at 88% 12%, rgb(194 224 255/35%), transparent 42%),
     linear-gradient(155deg, var(--blue-400), var(--blue-500) 45%, var(--blue-600));
   color: #fff;
+}
+
+/*
+ * Durante a fase de envio, a coluna de origem se comporta como o
+ * painel do app de roteiros: com padding próprio e altura livre
+ * (sem mínimo forçado, inclusive no mobile).
+ */
+.app-shell.phase-upload .source-side {
+  min-height: 0;
+  padding: 64px;
 }
 
 .source-background {
@@ -258,12 +296,9 @@ button:disabled {
 .upload-view {
   position: relative;
   z-index: 2;
-  display: grid;
-  width: min(100% - 48px, 760px);
+  display: flex;
   min-height: 100%;
-  margin: auto;
-  align-content: center;
-  padding: 38px 0 52px;
+  flex-direction: column;
   transition: opacity .24s ease, transform .32s var(--ease-enter);
 }
 
@@ -285,38 +320,41 @@ button:disabled {
    ========================================================= */
 
 .hero {
-  text-align: center;
+  max-width: 510px;
+  text-align: left;
 }
 
 .eyebrow,
 .section-eyebrow,
 .preview-header p {
-  margin: 0 0 9px;
-  font-size: .65rem;
-  font-weight: 780;
-  letter-spacing: .15em;
+  margin: 0 0 10px;
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .16em;
   text-transform: uppercase;
 }
 
 .eyebrow {
-  color: rgb(255 255 255/70%);
+  color: rgb(255 255 255/68%);
 }
 
 .hero h1 {
-  min-height: 1.08em;
+  min-height: 2.2em;
   margin: 0;
   color: #fff;
-  font-size: clamp(3rem, 6vw, 5.5rem);
-  font-weight: 780;
-  letter-spacing: -.06em;
-  line-height: 1;
+  font-size: clamp(2.15rem, 8.6cqw, 4.1rem);
+  font-weight: 760;
+  letter-spacing: -.055em;
+  line-height: 1.02;
+  text-wrap: balance;
 }
 
 .hero-description {
-  max-width: 540px;
-  margin: 18px auto 0;
+  max-width: 440px;
+  margin: 19px 0 0;
   color: rgb(255 255 255/76%);
   font-size: .95rem;
+  line-height: 1.65;
 }
 
 .typewriter-cursor {
@@ -336,20 +374,27 @@ button:disabled {
    ========================================================= */
 
 .upload-panel {
-  margin-top: 34px;
+  margin-top: clamp(28px, 4vh, 44px);
   transform-origin: center;
+}
+
+.app-shell.phase-upload .upload-panel {
+  margin-top: 44px;
 }
 
 .drop-zone {
   display: flex;
-  min-height: 330px;
+  min-height: 290px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  padding: 34px;
+  padding: 28px;
   border: 1px dashed rgb(255 255 255/65%);
   border-radius: 26px;
   background: rgb(255 255 255/13%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255/16%),
+    0 18px 40px rgb(24 43 113/10%);
   outline: none;
   text-align: center;
   transition: .22s var(--ease-soft);
@@ -424,8 +469,27 @@ button:disabled {
   font-size: .8rem;
 }
 
-.upload-limit {
+.format-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
   margin-top: 14px;
+}
+
+.format-list span {
+  padding: 4px 8px;
+  border: 1px solid rgb(255 255 255/25%);
+  border-radius: 7px;
+  background: rgb(255 255 255/10%);
+  color: rgb(255 255 255/78%);
+  font-size: .61rem;
+  font-weight: 750;
+  letter-spacing: .06em;
+}
+
+.upload-limit {
+  margin-top: 10px;
   color: rgb(255 255 255/58%);
   font-size: .67rem;
 }
@@ -779,21 +843,32 @@ button:disabled {
 }
 
 .source-information {
-  position: absolute;
-  z-index: 5;
   display: flex;
-  left: 50%;
-  bottom: 13px;
-  gap: 15px;
-  color: rgb(255 255 255/56%);
-  font-size: .62rem;
-  transform: translateX(-50%);
-  white-space: nowrap;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 28px;
+  color: rgb(255 255 255/65%);
+  font-size: .7rem;
+  font-weight: 600;
 }
 
-.phase-processing .source-information,
-.phase-review .source-information {
-  display: none;
+.source-information>span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-information .information-icon {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid rgb(255 255 255/30%);
+  border-radius: 50%;
+  color: #fff;
+  font-size: .58rem;
 }
 
 /* =========================================================
@@ -1389,6 +1464,11 @@ button:disabled {
     border-radius: 0;
   }
 
+  .app-shell.phase-upload {
+    width: 100%;
+    min-height: 100vh;
+  }
+
   .workspace,
   .phase-upload .workspace,
   .phase-processing .workspace,
@@ -1399,6 +1479,23 @@ button:disabled {
 
   .source-side {
     min-height: calc(100vh - 88px);
+  }
+
+  .app-shell.phase-upload .source-side {
+    padding: 48px 28px 38px;
+  }
+
+  .app-shell.phase-upload .hero {
+    max-width: 620px;
+  }
+
+  .app-shell.phase-upload .drop-zone {
+    min-height: 260px;
+  }
+
+  .app-shell.phase-upload .source-information {
+    margin-top: 24px;
+    padding-top: 0;
   }
 
   .phase-processing .source-side {
@@ -1442,10 +1539,6 @@ button:disabled {
 
   .connection-status {
     font-size: .65rem;
-  }
-
-  .hero h1 {
-    font-size: clamp(2.5rem, 13vw, 4rem);
   }
 
   .drop-zone {

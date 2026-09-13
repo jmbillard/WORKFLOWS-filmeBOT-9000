@@ -105,9 +105,10 @@ initialize();
 function initialize() {
   registerEvents();
   initializeTypewriter();
+  initializeMouseGradient();
   initializeHealthCheck();
   elements.uploadLimit.textContent =
-    `PDF · Limite de ${formatBytes(CONFIG.MAX_FILE_SIZE_BYTES)}`;
+    `Limite de ${formatBytes(CONFIG.MAX_FILE_SIZE_BYTES)}`;
   setPhase(APP_PHASE.UPLOAD);
   render();
 }
@@ -1103,6 +1104,40 @@ function initializeTypewriter() {
     text.textContent += original[index++];
     setTimeout(typeNext, 38 + Math.random() * 28);
   }, 350);
+}
+
+/*
+ * Faz o highlight radial do fundo da página (o "papel de parede"
+ * atrás do card) seguir o cursor — igual ao app de roteiros.
+ * Desativado para quem prefere movimento reduzido.
+ */
+function initializeMouseGradient() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  let frameId = null;
+  let lastX = 10;
+  let lastY = 5;
+
+  window.addEventListener(
+    "pointermove",
+    event => {
+      if (frameId !== null) return;
+
+      frameId = requestAnimationFrame(() => {
+        const x = (event.clientX / window.innerWidth) * 100;
+        const y = (event.clientY / window.innerHeight) * 100;
+
+        lastX += (x - lastX) * 0.16;
+        lastY += (y - lastY) * 0.16;
+
+        document.body.style.setProperty("--mouse-x", `${lastX.toFixed(2)}%`);
+        document.body.style.setProperty("--mouse-y", `${lastY.toFixed(2)}%`);
+
+        frameId = null;
+      });
+    },
+    { passive: true }
+  );
 }
 
 function hasActivePages() {
