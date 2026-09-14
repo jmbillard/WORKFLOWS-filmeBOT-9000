@@ -108,7 +108,7 @@ function initialize() {
   initializeMouseGradient();
   initializeHealthCheck();
   elements.uploadLimit.textContent =
-    `Limite de ${formatBytes(CONFIG.MAX_FILE_SIZE_BYTES)}`;
+    `Limite de ${formatBytes(CONFIG.MAX_FILE_SIZE_BYTES)} por arquivo`;
   setPhase(APP_PHASE.UPLOAD);
   render();
 }
