@@ -32,11 +32,11 @@
 
         <div id="upload-view" class="upload-view">
           <header class="hero">
-            <p class="eyebrow">Versão 3.1</p>
+            <p class="eyebrow">Versão 3.2</p>
             <h1>FilmeBOT 9000</h1>
-            <p class="hero-description">
+            <!-- <p class="hero-description">
               Envie a prévia de filmes em PDF e revise as informações extraídas.
-            </p>
+            </p> -->
           </header>
 
           <section id="upload-panel" class="upload-panel" aria-labelledby="upload-title">
@@ -56,15 +56,15 @@
                 <span>↑</span>
               </div>
 
-              <p id="drop-zone-title" class="drop-zone-title">Solte a grade aqui</p>
-              <p id="drop-zone-description" class="drop-zone-description">Selecione um arquivo PDF para iniciar.</p>
+              <p id="drop-zone-title" class="drop-zone-title">Solte a prévia aqui</p>
+              <p id="drop-zone-description" class="drop-zone-description">Arraste ou selecione no seu computador.</p>
               <button id="select-file-button" class="button button-upload" type="button">Selecionar PDF</button>
 
               <div class="format-list" aria-label="Formato aceito">
                 <span>PDF</span>
               </div>
 
-              <small id="upload-limit" class="upload-limit">Limite de 50 MB</small>
+              <small id="upload-limit" class="upload-limit">Limite de 50 MB por arquivo</small>
             </div>
 
             <div id="validation-messages" class="validation-messages" aria-live="polite"></div>
@@ -73,7 +73,9 @@
           <div id="source-information" class="source-information">
             <span>
               <span class="information-icon">✓</span>
-              Primeira e última páginas são ignoradas por padrão
+              Primeira e última páginas</br>são descartadas
+              <span class="information-icon">✓</span>
+              Filmes da Sessão da Tarde</br>são ignorados
             </span>
           </div>
         </div>
