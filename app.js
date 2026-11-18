@@ -18,7 +18,19 @@ const CONFIG = Object.freeze({
   SAVE_TIMEOUT_MS: 60000,
   HEALTHCHECK_INTERVAL_MS: 30000,
   HEALTHCHECK_TIMEOUT_MS: 5000,
-  MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024
+  MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024,
+  // Imagens enviadas junto com cada página.
+  PAGE_IMAGE_FIELD_NAME: "page_image",
+  POSTER_FIELD_PREFIX: "poster_",
+  IMAGE_RENDER_SCALE: 2,
+  IMAGE_JPEG_QUALITY: 0.9,
+  // Heurística para reconhecer posters entre as imagens da página
+  // (frações do tamanho da página e proporção altura/largura).
+  POSTER_MIN_WIDTH_RATIO: 0.04,
+  POSTER_MIN_HEIGHT_RATIO: 0.1,
+  POSTER_MAX_AREA_RATIO: 0.25,
+  POSTER_MIN_ASPECT: 1.1,
+  POSTER_MAX_ASPECT: 2.2
 });
 
 const APP_PHASE = Object.freeze({
@@ -82,6 +94,7 @@ const elements = {
   previewLoading: document.querySelector("#preview-loading"),
   scanOverlay: document.querySelector("#scan-overlay"),
   scanMessageLabel: document.querySelector("#scan-message-label"),
+  scanBeam: document.querySelector("#scan-beam"),
   previewStatusMessage: document.querySelector("#preview-status-message"),
   previousPageButton: document.querySelector("#previous-page-button"),
   nextPageButton: document.querySelector("#next-page-button"),
@@ -175,6 +188,7 @@ function registerEvents() {
     });
   });
 
+  elements.scanBeam.addEventListener("animationend", handleScanFinished);
   window.addEventListener("resize", handlePreviewResize, { passive: true });
   window.addEventListener("beforeunload", event => {
     if (hasActivePages() || state.isDirty) {
@@ -333,6 +347,8 @@ async function splitPdfPages(bytes, pageNumbers, originalName) {
       status: PAGE_STATUS.WAITING,
       message: "Aguardando processamento.",
       attempts: 0,
+      hasScanned: false,
+      images: null,
       startedAt: 0,
       finishedAt: 0,
       path: "",
@@ -406,22 +422,43 @@ function animatePreviewCanvas() {
 }
 
 function updatePreviewStatus(page = getSelectedPage()) {
-  if (!page) {
-    elements.scanOverlay.hidden = true;
-    elements.previewStatusMessage.textContent = "";
+  const overlay = elements.scanOverlay;
+  const isActive = page && (
+    page.status === PAGE_STATUS.PROCESSING || page.status === PAGE_STATUS.WAITING
+  );
+
+  if (!isActive) {
+    overlay.hidden = true;
+    overlay.classList.remove("is-scanning", "is-loading");
+    delete overlay.dataset.pageId;
+    elements.previewStatusMessage.textContent = page ? page.message : "";
     return;
   }
-  // A animação de scanner deve continuar enquanto houver qualquer página
-  // aguardando ou em processamento — ela só para quando tudo terminar,
-  // e não simplesmente quando a página exibida no momento é concluída.
-  const stillProcessing = hasActivePages();
-  elements.scanOverlay.hidden = !stillProcessing;
-  if (stillProcessing) {
-    elements.scanMessageLabel.textContent = page.status === PAGE_STATUS.PROCESSING
-      ? `Lendo página ${page.originalPageNumber}…`
-      : "Aguardando o processamento continuar…";
+
+  overlay.hidden = false;
+  // O feixe do scanner passa apenas duas vezes sobre a página no momento do
+  // envio; depois disso fica só um loader simples até o retorno dos dados.
+  const shouldScan = page.status === PAGE_STATUS.PROCESSING && !page.hasScanned;
+  if (shouldScan && overlay.dataset.pageId !== page.id) {
+    overlay.classList.remove("is-scanning");
+    void elements.scanBeam.offsetWidth;
   }
+  overlay.dataset.pageId = page.id;
+  overlay.classList.toggle("is-scanning", shouldScan);
+  overlay.classList.toggle("is-loading", !shouldScan);
+
+  elements.scanMessageLabel.textContent = page.status === PAGE_STATUS.WAITING
+    ? "Aguardando envio…"
+    : shouldScan
+      ? `Lendo página ${page.originalPageNumber}…`
+      : "Aguardando retorno dos dados…";
   elements.previewStatusMessage.textContent = page.message;
+}
+
+function handleScanFinished() {
+  const page = state.pages.find(item => item.id === elements.scanOverlay.dataset.pageId);
+  if (page) page.hasScanned = true;
+  updatePreviewStatus();
 }
 
 function updatePreviewNavigation() {
@@ -498,6 +535,7 @@ async function processPage(page) {
   page.status = PAGE_STATUS.PROCESSING;
   page.message = "Lendo o conteúdo da página…";
   page.attempts += 1;
+  page.hasScanned = false;
   page.startedAt = Date.now();
   state.selectedPageNumber = page.originalPageNumber;
   setPhase(APP_PHASE.PROCESSING);
@@ -516,6 +554,7 @@ async function processPage(page) {
     formData.append("original_page_number", String(page.originalPageNumber));
     formData.append("useful_page_number", String(page.usefulPageNumber));
     formData.append("total_useful_pages", String(page.totalUsefulPages));
+    await appendPageImages(formData, page);
 
     const response = await fetch(CONFIG.PROCESS_WEBHOOK_URL, {
       method: "POST",
@@ -558,6 +597,166 @@ function updateSelectionAfterPageFinished() {
     // Processamento completo: volta a exibir a primeira página.
     state.selectedPageNumber = state.pages[0].originalPageNumber;
   }
+}
+
+async function appendPageImages(formData, page) {
+  try {
+    if (!page.images) page.images = await extractPageImages(page.originalPageNumber);
+  } catch (error) {
+    // Falha na extração das imagens não impede o envio do PDF da página.
+    console.error("[Imagens]", error);
+    formData.append("poster_count", "0");
+    return;
+  }
+  const baseName = page.fileName.replace(/\.pdf$/i, "");
+  const { pageImage, posters } = page.images;
+  formData.append(CONFIG.PAGE_IMAGE_FIELD_NAME, pageImage, `${baseName}.jpg`);
+  formData.append("poster_count", String(posters.length));
+  formData.append("poster_boxes", JSON.stringify(posters.map(poster => poster.box)));
+  posters.forEach((poster, index) => {
+    const number = index + 1;
+    formData.append(
+      `${CONFIG.POSTER_FIELD_PREFIX}${number}`,
+      poster.blob,
+      `${baseName}_poster_${String(number).padStart(2, "0")}.jpg`
+    );
+  });
+}
+
+/**
+ * Renderiza a página em alta resolução e recorta os posters a partir das
+ * posições em que as imagens são desenhadas no PDF, em ordem de leitura
+ * (linhas de cima para baixo, e da esquerda para a direita em cada linha).
+ */
+async function extractPageImages(pageNumber) {
+  const pdfPage = await state.pdfDocument.getPage(pageNumber);
+  const viewport = pdfPage.getViewport({ scale: CONFIG.IMAGE_RENDER_SCALE });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await pdfPage.render({ canvasContext: context, viewport }).promise;
+
+  const boxes = sortBoxesInReadingOrder(
+    filterPosterBoxes(await getImageBoxes(pdfPage, viewport), canvas)
+  );
+  const pageImage = await canvasToJpeg(canvas);
+  const posters = [];
+  for (const box of boxes) {
+    const crop = document.createElement("canvas");
+    crop.width = box.width;
+    crop.height = box.height;
+    crop.getContext("2d").drawImage(
+      canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height
+    );
+    posters.push({ box, blob: await canvasToJpeg(crop) });
+  }
+  canvas.width = canvas.height = 0;
+  return { pageImage, posters };
+}
+
+async function getImageBoxes(pdfPage, viewport) {
+  const { OPS, Util } = pdfjsLib;
+  const imageOps = new Set([
+    OPS.paintImageXObject,
+    OPS.paintInlineImageXObject,
+    OPS.paintImageXObjectRepeat,
+    OPS.paintJpegXObject
+  ].filter(op => op !== undefined));
+  const operatorList = await pdfPage.getOperatorList();
+  const boxes = [];
+  const stack = [];
+  let matrix = viewport.transform.slice();
+
+  for (let index = 0; index < operatorList.fnArray.length; index += 1) {
+    const fn = operatorList.fnArray[index];
+    const args = operatorList.argsArray[index];
+    if (fn === OPS.save) stack.push(matrix);
+    else if (fn === OPS.restore) matrix = stack.pop() || matrix;
+    else if (fn === OPS.transform) matrix = Util.transform(matrix, args);
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(matrix);
+      if (Array.isArray(args?.[0]) && args[0].length === 6) {
+        matrix = Util.transform(matrix, args[0]);
+      }
+    } else if (fn === OPS.paintFormXObjectEnd) matrix = stack.pop() || matrix;
+    else if (imageOps.has(fn)) {
+      // Imagens são desenhadas no quadrado unitário do espaço atual.
+      const corners = [[0, 0], [1, 0], [0, 1], [1, 1]]
+        .map(point => Util.applyTransform(point, matrix));
+      const xs = corners.map(point => point[0]);
+      const ys = corners.map(point => point[1]);
+      boxes.push({
+        left: Math.min(...xs),
+        top: Math.min(...ys),
+        right: Math.max(...xs),
+        bottom: Math.max(...ys)
+      });
+    }
+  }
+  return boxes;
+}
+
+function filterPosterBoxes(boxes, canvas) {
+  const pageWidth = canvas.width;
+  const pageHeight = canvas.height;
+  const candidates = boxes
+    .map(box => {
+      const left = Math.max(0, Math.round(box.left));
+      const top = Math.max(0, Math.round(box.top));
+      const right = Math.min(pageWidth, Math.round(box.right));
+      const bottom = Math.min(pageHeight, Math.round(box.bottom));
+      return { x: left, y: top, width: right - left, height: bottom - top };
+    })
+    .filter(box => {
+      if (box.width <= 0 || box.height <= 0) return false;
+      const aspect = box.height / box.width;
+      return box.width >= pageWidth * CONFIG.POSTER_MIN_WIDTH_RATIO &&
+        box.height >= pageHeight * CONFIG.POSTER_MIN_HEIGHT_RATIO &&
+        box.width * box.height <= pageWidth * pageHeight * CONFIG.POSTER_MAX_AREA_RATIO &&
+        aspect >= CONFIG.POSTER_MIN_ASPECT &&
+        aspect <= CONFIG.POSTER_MAX_ASPECT;
+    });
+
+  // Remove imagens sobrepostas (ex.: a mesma arte desenhada duas vezes),
+  // mantendo a maior.
+  candidates.sort((a, b) => b.width * b.height - a.width * a.height);
+  return candidates.filter((box, index) => !candidates.slice(0, index).some(other => {
+    const overlapWidth = Math.min(box.x + box.width, other.x + other.width) - Math.max(box.x, other.x);
+    const overlapHeight = Math.min(box.y + box.height, other.y + other.height) - Math.max(box.y, other.y);
+    return overlapWidth > 0 && overlapHeight > 0 &&
+      overlapWidth * overlapHeight >= box.width * box.height * 0.5;
+  }));
+}
+
+function sortBoxesInReadingOrder(boxes) {
+  const rows = [];
+  [...boxes].sort((a, b) => a.y - b.y).forEach(box => {
+    const center = box.y + box.height / 2;
+    const row = rows.find(item => center >= item.top && center <= item.bottom);
+    if (row) {
+      row.boxes.push(box);
+      row.top = Math.min(row.top, box.y);
+      row.bottom = Math.max(row.bottom, box.y + box.height);
+    } else {
+      rows.push({ top: box.y, bottom: box.y + box.height, boxes: [box] });
+    }
+  });
+  return rows
+    .sort((a, b) => a.top - b.top)
+    .flatMap(row => row.boxes.sort((a, b) => a.x - b.x));
+}
+
+function canvasToJpeg(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error("Falha ao gerar imagem.")),
+      "image/jpeg",
+      CONFIG.IMAGE_JPEG_QUALITY
+    );
+  });
 }
 
 function parsePageResponse(text) {

@@ -717,7 +717,35 @@ button:disabled {
     0 0 9px #fff,
     0 0 22px var(--blue-500),
     0 13px 36px rgb(81 132 248/42%);
-  animation: scan 2.8s ease-in-out infinite;
+  /* Duas passadas por página: desce e sobe uma vez cada. */
+  animation: scan 1.4s ease-in-out 2 alternate both;
+}
+
+.scan-overlay:not(.is-scanning) .scan-beam {
+  display: none;
+}
+
+.scan-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(20 26 40/28%);
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+
+.scan-overlay.is-loading .scan-loader {
+  opacity: 1;
+}
+
+.scan-loader i {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgb(255 255 255/30%);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
 }
 
 .scan-message {
@@ -1358,13 +1386,11 @@ button:disabled {
 }
 
 @keyframes scan {
-
-  0%,
-  100% {
+  from {
     top: -7px;
   }
 
-  50% {
+  to {
     top: calc(100% - 2px);
   }
 }

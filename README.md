@@ -17,6 +17,8 @@ A janela cresce automaticamente da fase de envio para as demais assim que o proc
 - **Seleção/drag & drop de um único PDF**, com validação de tamanho (50 MB).
 - **Renderização de páginas no navegador** via PDF.js, com canvas de prévia e navegação página a página.
 - **Envio de cada página para um workflow de extração** (n8n), com timeout e possibilidade de cancelar páginas pendentes.
+- **Scanner de 2 passadas + loader**: ao enviar uma página, o feixe do scanner passa duas vezes sobre ela e em seguida é exibido um loader simples até o retorno do workflow.
+- **Envio de imagens junto com cada página**: a página completa em JPEG e os posters de cada filme recortados em ordem de leitura (veja abaixo).
 - **Cancelamento e reenvio** de páginas individualmente.
 - **Edição da programação extraída** antes de enviar para o Trello.
 - **Envio final para o Trello** por um webhook separado do de processamento, com mensagem de estado (`save-state-message`).
@@ -55,6 +57,23 @@ Os parâmetros ficam no topo do `app.js`, no objeto `CONFIG`:
 | `SAVE_TIMEOUT_MS` | Timeout do envio final ao Trello. |
 | `HEALTHCHECK_INTERVAL_MS` / `HEALTHCHECK_TIMEOUT_MS` | Frequência e timeout do healthcheck. |
 | `MAX_FILE_SIZE_BYTES` | Limite de tamanho do PDF de origem. |
+
+## Campos enviados ao webhook de processamento
+
+Cada página é enviada como `multipart/form-data` com:
+
+| Campo | Conteúdo |
+|---|---|
+| `page` | PDF da página (nome configurável em `FILE_FIELD_NAME`). |
+| `page_image` | JPEG da página completa (renderizada em 2x). |
+| `poster_1` … `poster_N` | JPEG de cada poster, em ordem de leitura: linhas de cima para baixo e, em cada linha, da esquerda para a direita. |
+| `poster_count` | Quantidade de posters enviados. |
+| `poster_boxes` | JSON com `{x, y, width, height}` de cada poster, em pixels da `page_image`. |
+| `request_id`, `document_id`, `original_file_name`, `original_page_number`, `useful_page_number`, `total_useful_pages` | Metadados da página. |
+
+No n8n, cada arquivo chega como uma propriedade binária com o mesmo nome do campo (`poster_1`, `poster_2`, …).
+
+Os posters são localizados pelas posições em que as imagens são desenhadas no PDF (via PDF.js) e recortados da página renderizada. Imagens de fundo, logos e ícones são descartados por uma heurística de tamanho e proporção, ajustável em `CONFIG` (`POSTER_MIN_WIDTH_RATIO`, `POSTER_MIN_HEIGHT_RATIO`, `POSTER_MAX_AREA_RATIO`, `POSTER_MIN_ASPECT`, `POSTER_MAX_ASPECT`). Se a extração das imagens falhar, a página é enviada mesmo assim, com `poster_count = 0`.
 
 ## Como usar localmente
 
