@@ -11,6 +11,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 const CONFIG = Object.freeze({
   PROCESS_WEBHOOK_URL: "****",
   SAVE_WEBHOOK_URL: "****",
+  // Conferência antes do envio (só leitura): para cada filme, o que o envio
+  // vai fazer — filme do acervo ou novo, ano, sessão, card que já existe e
+  // artes que já existem. Sem URL, a revisão funciona como antes.
+  CHECK_WEBHOOK_URL: "****",
+  CHECK_DEBOUNCE_MS: 700,
+  CHECK_TIMEOUT_MS: 15000,
   HEALTHCHECK_URL: "****",
   FILE_FIELD_NAME: "page",
   SEND_INTERVAL_MS: 2500,
@@ -30,7 +36,10 @@ const CONFIG = Object.freeze({
   POSTER_MIN_HEIGHT_RATIO: 0.1,
   POSTER_MAX_AREA_RATIO: 0.25,
   POSTER_MIN_ASPECT: 1.1,
-  POSTER_MAX_ASPECT: 2.2
+  POSTER_MAX_ASPECT: 2.2,
+  // Pôster que vai com o filme no envio (capa do card e acervo do filme).
+  POSTER_SEND_MAX_HEIGHT: 900,
+  POSTER_SEND_QUALITY: 0.86
 });
 
 const APP_PHASE = Object.freeze({
@@ -69,7 +78,11 @@ const state = {
   healthCheckIntervalId: null,
   isSaving: false,
   isDirty: false,
-  previewRenderTask: null
+  previewRenderTask: null,
+  checks: new Map(),
+  pickingMovieId: null,
+  checkTimer: null,
+  checkSeq: 0
 };
 
 let previewResizeTimer = null;
@@ -95,6 +108,7 @@ const elements = {
   scanOverlay: document.querySelector("#scan-overlay"),
   scanMessageLabel: document.querySelector("#scan-message-label"),
   scanBeam: document.querySelector("#scan-beam"),
+  posterMarks: document.querySelector("#poster-marks"),
   previewStatusMessage: document.querySelector("#preview-status-message"),
   previousPageButton: document.querySelector("#previous-page-button"),
   nextPageButton: document.querySelector("#next-page-button"),
@@ -189,6 +203,12 @@ function registerEvents() {
   });
 
   elements.scanBeam.addEventListener("animationend", handleScanFinished);
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !state.pickingMovieId) return;
+    state.pickingMovieId = null;
+    renderPageGroup();
+    renderPosterMarks();
+  });
   window.addEventListener("resize", handlePreviewResize, { passive: true });
   window.addEventListener("beforeunload", event => {
     if (hasActivePages() || state.isDirty) {
@@ -402,6 +422,7 @@ async function renderSelectedPreview() {
     });
     await state.previewRenderTask.promise;
     animatePreviewCanvas();
+    renderPosterMarks();
   } catch (error) {
     if (error?.name !== "RenderingCancelledException") {
       console.error("[Preview]", error);
@@ -572,9 +593,11 @@ async function processPage(page) {
     page.workflowStatus = result.status;
     page.responseId = result.ID;
     page.movies = result.movies.map(normalizeMovie);
+    assignPosters(page);
     page.status = PAGE_STATUS.SUCCESS;
     page.message = `${page.movies.length} filme(s) identificado(s).`;
     state.isDirty = true;
+    scheduleCheck();
   } catch (error) {
     page.status = PAGE_STATUS.ERROR;
     page.message = getRequestErrorMessage(error);
@@ -651,10 +674,13 @@ async function extractPageImages(pageNumber) {
     crop.getContext("2d").drawImage(
       canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height
     );
-    posters.push({ box, blob: await canvasToJpeg(crop) });
+    const blob = await canvasToJpeg(crop);
+    posters.push({ box, blob, url: URL.createObjectURL(blob) });
   }
+  const texts = await getTextLines(pdfPage, viewport).catch(() => []);
+  const size = { width: canvas.width, height: canvas.height };
   canvas.width = canvas.height = 0;
-  return { pageImage, posters };
+  return { pageImage, posters, texts, size };
 }
 
 async function getImageBoxes(pdfPage, viewport) {
@@ -697,6 +723,63 @@ async function getImageBoxes(pdfPage, viewport) {
     }
   }
   return boxes;
+}
+
+// Linhas de texto da página (em pixels da imagem renderizada), para achar o
+// título de cada filme e, logo acima dele, o seu pôster.
+async function getTextLines(pdfPage, viewport) {
+  const content = await pdfPage.getTextContent();
+  const lines = [];
+  for (const item of content.items) {
+    if (!item.str || !item.str.trim()) continue;
+    const [x, y] = pdfjsLib.Util.applyTransform([item.transform[4], item.transform[5]], viewport.transform);
+    const height = Math.hypot(item.transform[2], item.transform[3]) * viewport.scale;
+    const width = item.width * viewport.scale;
+    const line = lines.find(other => Math.abs(other.baseline - y) < height * 0.6 && x - (other.x + other.width) < height * 1.5 && x >= other.x - 2);
+    if (line) {
+      line.str += (x - (line.x + line.width) > height * 0.15 ? " " : "") + item.str;
+      line.width = Math.max(line.width, x + width - line.x);
+    } else {
+      lines.push({ str: item.str, x, baseline: y, top: y - height, width, height });
+    }
+  }
+  return lines;
+}
+
+// Liga cada filme ao pôster logo acima do seu título; se não achar o título,
+// e a página tiver um pôster por filme, vai pela ordem de leitura.
+function assignPosters(page) {
+  const images = page.images;
+  if (!images || !images.posters.length) return;
+  const used = new Set();
+  const byTitle = page.movies.map(movie => {
+    const key = compact(movie.titulo);
+    if (key.length < 2) return null;
+    const lines = images.texts.filter(line => {
+      const text = compact(line.str);
+      return text && (text === key || (text.startsWith(key) && key.length >= 4) || (key.startsWith(text) && text.length >= 6));
+    });
+    let best = null;
+    for (const line of lines) {
+      images.posters.forEach((poster, index) => {
+        const { x, y, width, height } = poster.box;
+        const overlap = Math.min(x + width, line.x + line.width) - Math.max(x, line.x);
+        const gap = line.top - (y + height);
+        if (overlap <= 0 || gap < -height * 0.15 || gap > height * 0.6) return;
+        const score = gap - overlap * 0.01;
+        if (!best || score < best.score) best = { index, score };
+      });
+    }
+    return best ? best.index : null;
+  });
+  page.movies.forEach((movie, index) => {
+    if (movie.posterTouched) return;
+    let chosen = byTitle[index];
+    if (chosen === null && images.posters.length === page.movies.length) chosen = index;
+    if (chosen !== null && used.has(chosen)) chosen = null;
+    if (chosen !== null) used.add(chosen);
+    movie.poster = chosen;
+  });
 }
 
 function filterPosterBoxes(boxes, canvas) {
@@ -784,7 +867,9 @@ function normalizeMovie(movie) {
       ? movie.ano_de_producao : String(movie?.ano_de_producao || ""),
     sessao: typeof movie?.sessao === "string" ? movie.sessao : "",
     data: typeof movie?.data === "string" ? movie.data : "",
-    inedito: movie?.inedito === true
+    inedito: movie?.inedito === true,
+    poster: null,
+    posterTouched: false
   };
 }
 
@@ -795,6 +880,7 @@ function render() {
   renderControls(counts);
   renderPageGroup();
   renderSaveState();
+  renderPosterMarks();
   if (state.sourceFile) {
     elements.previewFileName.textContent = state.sourceFile.name;
     elements.previewPageLabel.textContent = `Página ${state.selectedPageNumber}`;
@@ -829,7 +915,9 @@ function renderProgress(counts) {
 function renderQueueState(counts) {
   if (!counts.total) elements.queueStateMessage.textContent = "Selecione uma grade em PDF para começar.";
   else if (counts.error) elements.queueStateMessage.textContent = "Finalizado com páginas que precisam de atenção.";
-  else elements.queueStateMessage.textContent = "Todas as páginas disponíveis foram finalizadas.";
+  else elements.queueStateMessage.textContent = hasActivePages()
+    ? "Todas as páginas disponíveis foram finalizadas."
+    : checkSummary() || "Todas as páginas disponíveis foram finalizadas.";
 }
 
 function renderControls(counts) {
@@ -939,6 +1027,8 @@ function createMovieCard(page, movie) {
   remove.setAttribute("aria-label", `Remover ${movie.titulo || "filme"}`);
   remove.title = "Remover filme";
 
+  card.dataset.movieCard = movie.id;
+  card.classList.toggle("has-poster", Boolean(page.images?.posters.length));
   const top = document.createElement("div");
   top.className = "movie-top-row";
   const session = createTextField(page, movie, "sessao", "Sessão", movie.sessao);
@@ -958,8 +1048,162 @@ function createMovieCard(page, movie) {
   year.querySelector("input").maxLength = 4;
   const date = createTextField(page, movie, "data", "Data de exibição", movie.data, "date");
   bottom.append(year, date);
-  card.append(remove, top, title, bottom);
+  const check = document.createElement("div");
+  check.className = "movie-check";
+  check.dataset.checkFor = movie.id;
+  fillCheck(check, page, movie);
+  const fields = document.createElement("div");
+  fields.className = "movie-fields";
+  fields.append(top, title, bottom, check);
+  if (page.images?.posters.length) {
+    card.append(remove, createPosterThumb(page, movie), fields);
+    if (state.pickingMovieId === movie.id) card.append(createPosterPicker(page, movie));
+  } else {
+    card.append(remove, fields);
+  }
+  card.addEventListener("pointerenter", () => highlightPosterMark(movie.poster));
+  card.addEventListener("pointerleave", () => highlightPosterMark(null));
   return card;
+}
+
+function createPosterThumb(page, movie) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "poster-thumb";
+  button.dataset.pickPoster = movie.id;
+  button.setAttribute("aria-expanded", String(state.pickingMovieId === movie.id));
+  const poster = page.images.posters[movie.poster];
+  if (poster) {
+    const image = document.createElement("img");
+    image.src = poster.url;
+    image.alt = "";
+    button.append(image);
+    button.title = "Trocar o pôster";
+    button.setAttribute("aria-label", `Trocar o pôster de ${movie.titulo || "filme"}`);
+  } else {
+    button.classList.add("is-empty");
+    button.textContent = "sem pôster";
+    button.title = "Escolher o pôster";
+  }
+  return button;
+}
+
+function createPosterPicker(page, movie) {
+  const picker = document.createElement("div");
+  picker.className = "poster-picker";
+  picker.setAttribute("role", "listbox");
+  picker.setAttribute("aria-label", "Pôsteres da página");
+  const option = (index, content, label) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "poster-option";
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(movie.poster === index));
+    button.dataset.setPoster = movie.id;
+    button.dataset.posterIndex = index === null ? "" : String(index);
+    button.title = label;
+    button.append(content);
+    const owner = index === null ? null : page.movies.find(other => other !== movie && other.poster === index);
+    if (owner) button.classList.add("is-taken");
+    picker.append(button);
+  };
+  page.images.posters.forEach((poster, index) => {
+    const image = document.createElement("img");
+    image.src = poster.url;
+    image.alt = "";
+    option(index, image, `Pôster ${index + 1}`);
+  });
+  option(null, document.createTextNode("sem"), "Sem pôster");
+  const hint = document.createElement("p");
+  hint.className = "poster-hint";
+  hint.textContent = "ou clique no pôster na página";
+  picker.append(hint);
+  return picker;
+}
+
+function setMoviePoster(movieId, index) {
+  const found = findMovie(movieId);
+  if (!found) return;
+  // um pôster é de um filme só: quem tinha esse fica sem
+  if (index !== null) {
+    for (const other of found.page.movies) {
+      if (other !== found.movie && other.poster === index) { other.poster = null; other.posterTouched = true; }
+    }
+  }
+  found.movie.poster = index;
+  found.movie.posterTouched = true;
+  state.pickingMovieId = null;
+  state.isDirty = true;
+  renderPageGroup();
+  renderPosterMarks();
+  renderSaveState();
+}
+
+/* Marcas dos pôsteres por cima do preview */
+
+function renderPosterMarks() {
+  const layer = elements.posterMarks;
+  if (!layer) return;
+  layer.replaceChildren();
+  const page = state.pages.find(item => item.originalPageNumber === state.selectedPageNumber);
+  const images = page?.images;
+  const canvas = elements.previewCanvas;
+  if (!page || page.status !== PAGE_STATUS.SUCCESS || !images?.posters.length || !canvas.width) {
+    layer.hidden = true;
+    return;
+  }
+  // medidas do layout (sem a animação de entrada da página)
+  Object.assign(layer.style, {
+    left: `${canvas.offsetLeft}px`,
+    top: `${canvas.offsetTop}px`,
+    width: `${canvas.offsetWidth}px`,
+    height: `${canvas.offsetHeight}px`
+  });
+  layer.hidden = false;
+  layer.classList.toggle("is-picking", Boolean(state.pickingMovieId));
+  images.posters.forEach((poster, index) => {
+    const mark = document.createElement("button");
+    mark.type = "button";
+    mark.className = "poster-mark";
+    mark.dataset.markIndex = String(index);
+    const owner = page.movies.find(movie => movie.poster === index);
+    if (owner) {
+      mark.classList.add("is-linked");
+      mark.title = owner.titulo || "";
+    } else {
+      mark.title = "Pôster sem filme";
+    }
+    const { x, y, width, height } = poster.box;
+    Object.assign(mark.style, {
+      left: `${x / images.size.width * 100}%`,
+      top: `${y / images.size.height * 100}%`,
+      width: `${width / images.size.width * 100}%`,
+      height: `${height / images.size.height * 100}%`
+    });
+    mark.addEventListener("click", () => {
+      if (state.pickingMovieId) return setMoviePoster(state.pickingMovieId, index);
+      const target = owner && document.querySelector(`[data-movie-card="${owner.id}"]`);
+      if (target) {
+        target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        target.classList.remove("is-flash");
+        void target.offsetWidth;
+        target.classList.add("is-flash");
+      }
+    });
+    mark.addEventListener("pointerenter", () => {
+      if (owner) document.querySelector(`[data-movie-card="${owner.id}"]`)?.classList.add("is-hover-mark");
+    });
+    mark.addEventListener("pointerleave", () => {
+      document.querySelectorAll(".is-hover-mark").forEach(item => item.classList.remove("is-hover-mark"));
+    });
+    layer.append(mark);
+  });
+}
+
+function highlightPosterMark(index) {
+  for (const mark of elements.posterMarks?.children || []) {
+    mark.classList.toggle("is-active", index !== null && mark.dataset.markIndex === String(index));
+  }
 }
 
 function createTextField(page, movie, field, label, value, type = "text", className = "") {
@@ -994,7 +1238,18 @@ function handleGroupClick(event) {
   const add = event.target.closest("[data-add-movie]");
   if (add) return addMovie(add.dataset.addMovie);
   const remove = event.target.closest("[data-remove-movie]");
-  if (remove) removeMovie(remove.dataset.pageId, remove.dataset.removeMovie);
+  if (remove) return removeMovie(remove.dataset.pageId, remove.dataset.removeMovie);
+  const apply = event.target.closest("[data-apply-field]");
+  if (apply) return applySuggestion(apply);
+  const pick = event.target.closest("[data-pick-poster]");
+  if (pick) {
+    state.pickingMovieId = state.pickingMovieId === pick.dataset.pickPoster ? null : pick.dataset.pickPoster;
+    renderPageGroup();
+    renderPosterMarks();
+    return;
+  }
+  const set = event.target.closest("[data-set-poster]");
+  if (set) setMoviePoster(set.dataset.setPoster, set.dataset.posterIndex === "" ? null : Number(set.dataset.posterIndex));
 }
 
 function handleMovieInput(event) {
@@ -1006,12 +1261,13 @@ function handleMovieInput(event) {
   movie[input.dataset.movieField] = input.type === "checkbox" ? input.checked : input.value;
   state.isDirty = true;
   renderSaveState();
+  scheduleCheck();
 }
 
 function addMovie(pageId) {
   const page = state.pages.find(item => item.id === pageId);
   if (!page || page.status !== PAGE_STATUS.SUCCESS) return;
-  page.movies.push({ id: createId(), titulo: "", ano_de_producao: "", sessao: "", data: "", inedito: false });
+  page.movies.push({ id: createId(), titulo: "", ano_de_producao: "", sessao: "", data: "", inedito: false, poster: null, posterTouched: false });
   state.isDirty = true;
   renderPageGroup();
   renderSaveState();
@@ -1024,6 +1280,7 @@ function removeMovie(pageId, movieId) {
   state.isDirty = true;
   renderPageGroup();
   renderSaveState();
+  scheduleCheck();
 }
 
 function retryPage(pageId) {
@@ -1082,12 +1339,15 @@ function clearProjectState() {
   state.sourceBytes = null;
   state.pdfDocument = null;
   state.documentId = null;
+  for (const page of state.pages) page.images?.posters.forEach(poster => URL.revokeObjectURL(poster.url));
   state.pages = [];
   state.selectedPageNumber = null;
   state.lastDispatchAt = 0;
   state.isSchedulerRunning = false;
   state.isSaving = false;
   state.isDirty = false;
+  state.checks.clear();
+  state.pickingMovieId = null;
   elements.previewCanvas.getContext("2d").clearRect(
     0, 0, elements.previewCanvas.width, elements.previewCanvas.height
   );
@@ -1109,7 +1369,7 @@ async function saveResults() {
     const response = await fetch(CONFIG.SAVE_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(buildSavePayload()),
+      body: JSON.stringify(await buildSavePayload()),
       credentials: "omit",
       signal: controller.signal
     });
@@ -1142,7 +1402,15 @@ async function saveResults() {
   renderSaveState();
 }
 
-function buildSavePayload() {
+async function buildSavePayload() {
+  const posters = new Map();
+  for (const page of state.pages) {
+    if (page.status !== PAGE_STATUS.SUCCESS || !page.images) continue;
+    for (const movie of page.movies) {
+      const poster = page.images.posters[movie.poster];
+      if (poster) posters.set(movie.id, await posterDataUrl(poster.blob).catch(() => ""));
+    }
+  }
   return {
     document_id: state.documentId,
     original_file_name: state.sourceFile.name,
@@ -1161,10 +1429,189 @@ function buildSavePayload() {
           ano_de_producao: movie.ano_de_producao.trim(),
           sessao: movie.sessao.trim(),
           data: movie.data,
-          inedito: Boolean(movie.inedito)
+          inedito: Boolean(movie.inedito),
+          poster: posters.get(movie.id) || ""
         }))
       }))
   };
+}
+
+// O pôster vai como JPEG em data URL, com no máximo POSTER_SEND_MAX_HEIGHT de altura.
+async function posterDataUrl(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, CONFIG.POSTER_SEND_MAX_HEIGHT / bitmap.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  return canvas.toDataURL("image/jpeg", CONFIG.POSTER_SEND_QUALITY);
+}
+
+/* ---------------------------------------------------------
+   Conferência: o que o envio vai fazer com cada filme
+   --------------------------------------------------------- */
+
+function isCheckEnabled() {
+  return /^https?:\/\//.test(CONFIG.CHECK_WEBHOOK_URL);
+}
+
+function scheduleCheck() {
+  if (!isCheckEnabled()) return;
+  clearTimeout(state.checkTimer);
+  state.checkTimer = setTimeout(runCheck, CONFIG.CHECK_DEBOUNCE_MS);
+}
+
+function moviesToCheck() {
+  return state.pages
+    .filter(page => page.status === PAGE_STATUS.SUCCESS)
+    .flatMap(page => page.movies.map(movie => ({ page, movie })))
+    .filter(({ movie }) => movie.titulo.trim() && movie.sessao.trim() && movie.data);
+}
+
+async function runCheck() {
+  const list = moviesToCheck();
+  const seq = ++state.checkSeq;
+  if (!list.length) {
+    state.checks.clear();
+    return updateCheckViews();
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONFIG.CHECK_TIMEOUT_MS);
+  try {
+    const response = await fetch(CONFIG.CHECK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ movies: list.map(({ movie }) => ({
+        titulo: movie.titulo.trim(),
+        ano_de_producao: movie.ano_de_producao.trim(),
+        sessao: movie.sessao.trim(),
+        data: movie.data,
+        inedito: Boolean(movie.inedito)
+      })) }),
+      credentials: "omit",
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (seq !== state.checkSeq) return;
+    const rows = Array.isArray(data?.movies) ? data.movies : [];
+    state.checks.clear();
+    for (const row of rows) {
+      const item = list[Number(row.ord) - 1];
+      if (item) state.checks.set(item.movie.id, row);
+    }
+  } catch (error) {
+    // A conferência é uma ajuda: se falhar, a revisão e o envio seguem normais.
+    console.warn("[Conferência]", error);
+    if (seq === state.checkSeq) state.checks.clear();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  updateCheckViews();
+}
+
+function updateCheckViews() {
+  for (const element of document.querySelectorAll("[data-check-for]")) {
+    const found = findMovie(element.dataset.checkFor);
+    if (found) fillCheck(element, found.page, found.movie);
+  }
+  renderQueueState(getCounts());
+}
+
+function findMovie(movieId) {
+  for (const page of state.pages) {
+    const movie = page.movies.find(item => item.id === movieId);
+    if (movie) return { page, movie };
+  }
+  return null;
+}
+
+function compact(text) {
+  return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, "e").replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function fillCheck(element, page, movie) {
+  const row = state.checks.get(movie.id);
+  element.replaceChildren();
+  element.hidden = !row;
+  if (!row) return;
+  const chip = (text, tone, title) => {
+    const item = document.createElement("span");
+    item.className = `check-chip ${tone}`;
+    item.textContent = text;
+    if (title) item.title = title;
+    element.append(item);
+    return item;
+  };
+  const suggest = (label, field, value) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "check-apply";
+    button.dataset.pageId = page.id;
+    button.dataset.movieId = movie.id;
+    button.dataset.applyField = field;
+    button.dataset.applyValue = value;
+    button.textContent = label;
+    element.append(button);
+  };
+
+  if (row.card_existente) {
+    const item = chip("já tem card", "is-muted", "Este filme já tem card neste dia: o envio não duplica.");
+    if (/^https?:/.test(row.card_existente)) {
+      const link = document.createElement("a");
+      link.href = row.card_existente;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "já tem card ↗";
+      item.replaceChildren(link);
+    }
+    return;
+  }
+  if (!row.sessao_ok) chip("sessão sem cadastro", "is-danger", "A sessão não está nas atrações (tipo Sessão de filme).");
+  if (row.novo) chip("filme novo", "is-warning", "Entra no acervo de filmes no envio.");
+  else {
+    chip("no acervo", "is-success", row.filme_titulo || "");
+    if (row.filme_titulo && row.filme_titulo !== movie.titulo.trim() && compact(row.filme_titulo) === compact(movie.titulo)) {
+      suggest(`usar “${row.filme_titulo}”`, "titulo", row.filme_titulo);
+    }
+    if (row.ano_diferente && row.ano) {
+      chip(`acervo: ${row.ano}`, "is-warning", "O ano do PDF é diferente do ano no acervo.");
+      suggest(`usar ${row.ano}`, "ano_de_producao", String(row.ano));
+    } else if (!movie.ano_de_producao.trim() && row.ano) {
+      suggest(`ano ${row.ano}`, "ano_de_producao", String(row.ano));
+    }
+  }
+  const novas = Array.isArray(row.artes_novas) ? row.artes_novas : [];
+  const existentes = Array.isArray(row.artes_existentes) ? row.artes_existentes : [];
+  chip(`${novas.length} ${novas.length === 1 ? "arte" : "artes"}`, "is-neutral", novas.join(", "));
+  if (existentes.length) chip(`${existentes.length} já ${existentes.length === 1 ? "existe" : "existem"}`, "is-muted", existentes.join(", "));
+}
+
+function applySuggestion(button) {
+  const found = findMovie(button.dataset.movieId);
+  if (!found) return;
+  const field = button.dataset.applyField;
+  found.movie[field] = button.dataset.applyValue;
+  const input = document.querySelector(
+    `[data-movie-id="${button.dataset.movieId}"][data-movie-field="${field}"]`
+  );
+  if (input) input.value = button.dataset.applyValue;
+  state.isDirty = true;
+  renderSaveState();
+  scheduleCheck();
+}
+
+function checkSummary() {
+  if (!isCheckEnabled() || !state.checks.size) return "";
+  const rows = [...state.checks.values()];
+  const existing = rows.filter(row => row.card_existente).length;
+  const fresh = rows.length - existing;
+  const newMovies = rows.filter(row => !row.card_existente && row.novo).length;
+  const parts = [`${fresh} ${fresh === 1 ? "card novo" : "cards novos"}`];
+  if (existing) parts.push(`${existing} já ${existing === 1 ? "existe" : "existem"}`);
+  if (newMovies) parts.push(`${newMovies} ${newMovies === 1 ? "filme novo" : "filmes novos"} no acervo`);
+  return parts.join(" · ");
 }
 
 function parseSaveResponse(text) {
