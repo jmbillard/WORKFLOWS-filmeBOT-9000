@@ -20,7 +20,7 @@ A janela cresce automaticamente da fase de envio para as demais assim que o proc
 - **Scanner de 2 passadas + loader**: ao enviar uma página, o feixe do scanner passa duas vezes sobre ela e em seguida é exibido um loader simples até o retorno do workflow.
 - **Envio de imagens junto com cada página**: a página completa em JPEG e os posters de cada filme recortados em ordem de leitura (veja abaixo).
 - **Pôster de cada filme**: o recorte que fica logo acima do título do filme na página vira o pôster dele (se não achar o título e a página tiver um pôster por filme, vai pela ordem). A miniatura aparece no card; clicar nela abre os pôsteres da página para trocar, ou basta clicar no pôster no preview. No hover do card, o pôster dele acende no preview.
-- **Conferência antes do envio** (opcional, `CHECK_WEBHOOK_URL`): cada filme mostra o que o envio vai fazer — no acervo / filme novo, ano diferente do acervo (com "usar" para corrigir), sessão sem cadastro, card que já existe no dia (não é duplicado) e quantas artes são novas e quantas já existem. O topo resume: cards novos, já existentes e filmes novos.
+- **Conferência antes do envio** (`CHECK_ON_SAVE_WEBHOOK`, pelo mesmo webhook do envio): cada filme mostra o que o envio vai fazer — no acervo / filme novo, ano diferente do acervo (com "usar" para corrigir), sessão sem cadastro, card que já existe no dia (não é duplicado) e quantas artes são novas e quantas já existem. O topo resume: cards novos, já existentes e filmes novos.
 - **Cancelamento e reenvio** de páginas individualmente.
 - **Edição da programação extraída** antes de enviar para o Trello.
 - **Envio final para o Trello** por um webhook separado do de processamento, com mensagem de estado (`save-state-message`).
@@ -52,7 +52,7 @@ Os parâmetros ficam no topo do `app.js`, no objeto `CONFIG`:
 |---|---|
 | `PROCESS_WEBHOOK_URL` | Endpoint que recebe cada página para extração das informações. |
 | `SAVE_WEBHOOK_URL` | Endpoint que recebe a programação revisada, para envio ao Trello. |
-| `CHECK_WEBHOOK_URL` | Endpoint de conferência (só leitura). Recebe `{ movies }` e devolve `{ movies: [{ ord, novo, filme_titulo, ano, ano_diferente, sessao_ok, card_existente, artes_novas, artes_existentes }] }`. Sem URL, a conferência fica desligada. |
+| `CHECK_ON_SAVE_WEBHOOK` | Liga a conferência: manda `{ acao: "conferir", movies }` ao `SAVE_WEBHOOK_URL`, que só lê e devolve `{ movies: [{ ord, novo, filme_titulo, ano, ano_diferente, sessao_ok, card_existente, artes_novas, artes_existentes }] }`. Ligar junto com o fluxo de cards v10. |
 | `HEALTHCHECK_URL` | Endpoint de checagem de disponibilidade do workflow. |
 | `FILE_FIELD_NAME` | Nome do campo enviado no multipart (padrão: `page`). |
 | `SEND_INTERVAL_MS` | Intervalo entre o envio de páginas. |
@@ -80,7 +80,7 @@ Os posters são localizados pelas posições em que as imagens são desenhadas n
 
 ## Pôster no envio
 
-Cada filme vai no envio com `poster`: o JPEG em data URL (até `POSTER_SEND_MAX_HEIGHT` px de altura), ou vazio quando o filme ficou sem pôster. O fluxo de cards usa o pôster como capa do card no Trello e guarda no acervo do filme quando ele ainda não tem.
+Cada filme vai no envio com `poster`: o JPEG em data URL (até `POSTER_SEND_MAX_HEIGHT` px de altura), ou vazio quando o filme ficou sem pôster. O fluxo de cards guarda o pôster no cadastro do filme quando ele ainda não tem (não vai para o card).
 
 ## Como usar localmente
 

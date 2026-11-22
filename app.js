@@ -11,10 +11,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 const CONFIG = Object.freeze({
   PROCESS_WEBHOOK_URL: "****",
   SAVE_WEBHOOK_URL: "****",
-  // Conferência antes do envio (só leitura): para cada filme, o que o envio
-  // vai fazer — filme do acervo ou novo, ano, sessão, card que já existe e
-  // artes que já existem. Sem URL, a revisão funciona como antes.
-  CHECK_WEBHOOK_URL: "****",
+  // Conferência antes do envio (só leitura), pelo mesmo webhook do envio com
+  // { acao: "conferir" }: para cada filme, o que o envio vai fazer — filme do
+  // acervo ou novo, ano, sessão, card que já existe e artes que já existem.
+  // Ligar só com o fluxo de cards v10 (o v9 trataria a conferência como envio).
+  CHECK_ON_SAVE_WEBHOOK: false,
   CHECK_DEBOUNCE_MS: 700,
   CHECK_TIMEOUT_MS: 15000,
   HEALTHCHECK_URL: "****",
@@ -1453,7 +1454,7 @@ async function posterDataUrl(blob) {
    --------------------------------------------------------- */
 
 function isCheckEnabled() {
-  return /^https?:\/\//.test(CONFIG.CHECK_WEBHOOK_URL);
+  return CONFIG.CHECK_ON_SAVE_WEBHOOK && /^https?:\/\//.test(CONFIG.SAVE_WEBHOOK_URL);
 }
 
 function scheduleCheck() {
@@ -1479,10 +1480,10 @@ async function runCheck() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.CHECK_TIMEOUT_MS);
   try {
-    const response = await fetch(CONFIG.CHECK_WEBHOOK_URL, {
+    const response = await fetch(CONFIG.SAVE_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ movies: list.map(({ movie }) => ({
+      body: JSON.stringify({ acao: "conferir", movies: list.map(({ movie }) => ({
         titulo: movie.titulo.trim(),
         ano_de_producao: movie.ano_de_producao.trim(),
         sessao: movie.sessao.trim(),
