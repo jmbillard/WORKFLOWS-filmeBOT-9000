@@ -20,6 +20,7 @@ A janela cresce automaticamente da fase de envio para as demais assim que o proc
 - **Scanner de 2 passadas + loader**: ao enviar uma página, o feixe do scanner passa duas vezes sobre ela e em seguida é exibido um loader simples até o retorno do workflow.
 - **Envio de imagens junto com cada página**: a página completa em JPEG e os posters de cada filme recortados em ordem de leitura (veja abaixo).
 - **Pôster de cada filme**: o recorte que fica logo acima do título do filme na página vira o pôster dele (se não achar o título e a página tiver um pôster por filme, vai pela ordem). A miniatura aparece no card; clicar nela abre os pôsteres da página para trocar, ou basta clicar no pôster no preview. No hover do card, o pôster dele acende no preview.
+- **Grade igual à página**: os cards seguem a ordem dos pôsteres da página e, no lugar de um pôster sem filme (cancelado ou fora da agenda, que a extração ignora), entra um card fantasma com o pôster apagado e o texto que está embaixo dele. "incluir" transforma o fantasma em filme, com título, ano e pôster.
 - **Conferência antes do envio** (`CHECK_ON_SAVE_WEBHOOK`, pelo mesmo webhook do envio): cada filme mostra o que o envio vai fazer — no acervo / filme novo, ano diferente do acervo (com "usar" para corrigir), sessão sem cadastro, card que já existe no dia (não é duplicado) e quantas artes são novas e quantas já existem. O topo resume: cards novos, já existentes e filmes novos.
 - **Cancelamento e reenvio** de páginas individualmente.
 - **Edição da programação extraída** antes de enviar para o Trello.

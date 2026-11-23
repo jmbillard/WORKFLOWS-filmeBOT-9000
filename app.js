@@ -978,7 +978,9 @@ function createPageGroup(page) {
   if (page.status === PAGE_STATUS.SUCCESS) {
     const grid = document.createElement("div");
     grid.className = "movie-grid";
-    grid.append(...page.movies.map(movie => createMovieCard(page, movie)));
+    grid.append(...layoutItems(page).map(item => item.movie
+      ? createMovieCard(page, item.movie)
+      : createGhostCard(page, item.poster)));
     group.append(grid);
     const addContainer = document.createElement("div");
     addContainer.className = "add-movie-container";
@@ -1015,6 +1017,91 @@ function createStatusPill(status) {
   label.textContent = STATUS_LABELS[status];
   pill.append(label);
   return pill;
+}
+
+// A grade segue a página: os filmes na ordem dos pôsteres e, no lugar de cada
+// pôster sem filme (cancelado, fora da agenda), um card fantasma. Filmes sem
+// pôster vêm no fim.
+function layoutItems(page) {
+  const posters = page.images?.posters || [];
+  if (!posters.length) return page.movies.map(movie => ({ movie }));
+  const items = posters.map((_, index) => {
+    const movie = page.movies.find(item => item.poster === index);
+    return movie ? { movie } : { poster: index };
+  });
+  return items.concat(page.movies.filter(movie => !posters[movie.poster]).map(movie => ({ movie })));
+}
+
+// O texto logo abaixo do pôster na página (título, "CANCELADO"...), para o fantasma.
+function textBelowPoster(page, index) {
+  const { box } = page.images.posters[index];
+  const lines = page.images.texts
+    .filter(line => {
+      const overlap = Math.min(box.x + box.width, line.x + line.width) - Math.max(box.x, line.x);
+      const gap = line.top - (box.y + box.height);
+      return overlap > 0 && gap > -box.height * 0.1 && gap < box.height * 0.45;
+    })
+    .sort((a, b) => a.top - b.top);
+  const title = lines.find(line => !/^\(?\d{4}\)?$/.test(line.str.trim()) && !/EXIBI[ÇC][ÃA]O/i.test(line.str));
+  const year = lines.map(line => line.str.match(/\((\d{4})\)/)?.[1]).find(Boolean) || "";
+  return { title: title ? title.str.trim() : "", year };
+}
+
+function createGhostCard(page, index) {
+  const card = document.createElement("article");
+  card.className = "movie-card is-ghost";
+  card.dataset.ghostPoster = String(index);
+  const thumb = document.createElement("div");
+  thumb.className = "poster-thumb is-ghost";
+  const image = document.createElement("img");
+  image.src = page.images.posters[index].url;
+  image.alt = "";
+  thumb.append(image);
+  const { title, year } = textBelowPoster(page, index);
+  const body = document.createElement("div");
+  body.className = "ghost-body";
+  const label = document.createElement("strong");
+  label.textContent = title || "Sem filme";
+  const hint = document.createElement("span");
+  hint.textContent = "fora da grade: cancelado ou sem agenda";
+  const include = document.createElement("button");
+  include.type = "button";
+  include.className = "check-apply";
+  include.dataset.includePoster = String(index);
+  include.dataset.pageId = page.id;
+  include.dataset.title = title;
+  include.dataset.year = year;
+  include.textContent = "incluir";
+  body.append(label, hint, include);
+  card.append(thumb, body);
+  card.addEventListener("pointerenter", () => highlightPosterMark(index));
+  card.addEventListener("pointerleave", () => highlightPosterMark(null));
+  return card;
+}
+
+function includeGhost(button) {
+  const page = state.pages.find(item => item.id === button.dataset.pageId);
+  if (!page) return;
+  const movie = {
+    id: createId(), titulo: titleCase(button.dataset.title || ""), ano_de_producao: button.dataset.year || "",
+    sessao: "", data: "", inedito: false, poster: Number(button.dataset.includePoster), posterTouched: true
+  };
+  page.movies.push(movie);
+  state.isDirty = true;
+  renderPageGroup();
+  renderPosterMarks();
+  renderSaveState();
+  scheduleCheck();
+  const card = document.querySelector(`[data-movie-card="${movie.id}"]`);
+  card?.classList.add("is-flash");
+  card?.querySelector(`[data-movie-field="${movie.titulo ? "sessao" : "titulo"}"]`)?.focus();
+}
+
+function titleCase(text) {
+  const small = new Set(["a", "o", "as", "os", "de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos", "por", "para", "com", "um", "uma"]);
+  return text.toLocaleLowerCase("pt-BR").split(/(\s+)/).map((word, index) =>
+    index > 0 && small.has(word) ? word : word.charAt(0).toLocaleUpperCase("pt-BR") + word.slice(1)
+  ).join("");
 }
 
 function createMovieCard(page, movie) {
@@ -1183,7 +1270,9 @@ function renderPosterMarks() {
     });
     mark.addEventListener("click", () => {
       if (state.pickingMovieId) return setMoviePoster(state.pickingMovieId, index);
-      const target = owner && document.querySelector(`[data-movie-card="${owner.id}"]`);
+      const target = owner
+        ? document.querySelector(`[data-movie-card="${owner.id}"]`)
+        : document.querySelector(`[data-ghost-poster="${index}"]`);
       if (target) {
         target.scrollIntoView({ block: "nearest", behavior: "smooth" });
         target.classList.remove("is-flash");
@@ -1192,7 +1281,9 @@ function renderPosterMarks() {
       }
     });
     mark.addEventListener("pointerenter", () => {
-      if (owner) document.querySelector(`[data-movie-card="${owner.id}"]`)?.classList.add("is-hover-mark");
+      (owner
+        ? document.querySelector(`[data-movie-card="${owner.id}"]`)
+        : document.querySelector(`[data-ghost-poster="${index}"]`))?.classList.add("is-hover-mark");
     });
     mark.addEventListener("pointerleave", () => {
       document.querySelectorAll(".is-hover-mark").forEach(item => item.classList.remove("is-hover-mark"));
@@ -1242,6 +1333,8 @@ function handleGroupClick(event) {
   if (remove) return removeMovie(remove.dataset.pageId, remove.dataset.removeMovie);
   const apply = event.target.closest("[data-apply-field]");
   if (apply) return applySuggestion(apply);
+  const include = event.target.closest("[data-include-poster]");
+  if (include) return includeGhost(include);
   const pick = event.target.closest("[data-pick-poster]");
   if (pick) {
     state.pickingMovieId = state.pickingMovieId === pick.dataset.pickPoster ? null : pick.dataset.pickPoster;

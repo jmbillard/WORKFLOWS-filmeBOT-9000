@@ -1932,3 +1932,70 @@ button:disabled {
 .check-apply:hover {
   text-decoration-style: solid;
 }
+
+/* =========================================================
+   Card fantasma: pôster da página sem filme (cancelado, fora da agenda)
+   ========================================================= */
+
+.movie-card.is-ghost {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+  opacity: .62;
+  transition: opacity .2s var(--ease-soft), border-color .2s;
+}
+
+.movie-card.is-ghost:hover,
+.movie-card.is-ghost.is-hover-mark {
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
+
+.poster-thumb.is-ghost {
+  cursor: default;
+  filter: grayscale(1);
+  box-shadow: none;
+}
+
+.poster-thumb.is-ghost::after {
+  display: none;
+}
+
+.ghost-body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  justify-items: start;
+}
+
+.ghost-body strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: .66rem;
+  text-decoration: line-through;
+  text-decoration-color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghost-body span {
+  color: var(--text-tertiary);
+  font-size: .5rem;
+}
+
+.ghost-body .check-apply {
+  padding-left: 0;
+  opacity: 0;
+  transition: opacity .16s;
+}
+
+.movie-card.is-ghost:hover .check-apply,
+.ghost-body .check-apply:focus-visible {
+  opacity: 1;
+}
