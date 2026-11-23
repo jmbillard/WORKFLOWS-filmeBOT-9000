@@ -3011,3 +3011,23 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   #save-button.is-busy { animation: none; }
 }
+
+/* o título bate com mais de um filme do banco: quem envia escolhe qual é */
+.film-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.film-choice > span {
+  flex: none;
+  font-size: .5rem;
+  font-weight: 730;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.film-choice-select { flex: 1; width: auto; }
+.movie-card.is-ambiguous .film-choice > span { color: var(--waiting); }
+.movie-card.is-ambiguous .film-choice-select { border-color: var(--waiting); box-shadow: 0 0 0 3px var(--waiting-bg); }

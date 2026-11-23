@@ -1035,6 +1035,8 @@ function normalizeMovie(movie) {
     sessao: typeof movie?.sessao === "string" ? movie.sessao : "",
     data: typeof movie?.data === "string" ? movie.data : "",
     inedito: movie?.inedito === true,
+    // quando o título deixa dúvida (O Esquadrão Suicida × Esquadrão Suicida): o filme do banco escolhido ou "novo"
+    filme_id: "",
     poster: null,
     posterTouched: false
   };
@@ -1859,6 +1861,8 @@ function handleMovieInput(event) {
   const movie = page?.movies.find(item => item.id === input.dataset.movieId);
   if (!movie) return;
   movie[input.dataset.movieField] = input.type === "checkbox" ? input.checked : input.value;
+  // outro título ou outro ano: a escolha do filme vale para o de antes
+  if (input.dataset.movieField === "titulo" || input.dataset.movieField === "ano_de_producao") movie.filme_id = "";
   state.isDirty = true;
   renderSaveState();
   scheduleCheck();
@@ -1867,7 +1871,7 @@ function handleMovieInput(event) {
 function addMovie(pageId) {
   const page = state.pages.find(item => item.id === pageId);
   if (!page || page.status !== PAGE_STATUS.SUCCESS) return;
-  page.movies.push({ id: createId(), titulo: "", ano_de_producao: "", sessao: "", data: "", inedito: false, poster: null, posterTouched: false });
+  page.movies.push({ id: createId(), titulo: "", ano_de_producao: "", sessao: "", data: "", inedito: false, filme_id: "", poster: null, posterTouched: false });
   state.isDirty = true;
   renderPageGroup();
   renderSaveState();
@@ -2030,6 +2034,7 @@ async function buildSavePayload() {
           sessao: movie.sessao.trim(),
           data: movie.data,
           inedito: Boolean(movie.inedito),
+          ...(movie.filme_id ? { filme_id: movie.filme_id } : {}),
           poster: posters.get(movie.id) || ""
         }))
       }))
@@ -2087,7 +2092,8 @@ async function runCheck() {
         ano_de_producao: movie.ano_de_producao.trim(),
         sessao: movie.sessao.trim(),
         data: movie.data,
-        inedito: Boolean(movie.inedito)
+        inedito: Boolean(movie.inedito),
+        ...(movie.filme_id ? { filme_id: movie.filme_id } : {})
       })) }),
       credentials: "omit",
       signal: controller.signal
@@ -2132,14 +2138,17 @@ function compact(text) {
   return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, "e").replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
-// Da conferência, a tela mostra só o que já tem card: o selo leva ao card no Trello
-// e o envio não cria de novo (o n8n também confere).
+// Da conferência, a tela mostra o que já tem card (o selo leva ao card no Trello e o envio
+// não cria de novo; o n8n também confere) e, quando o título deixa dúvida, a escolha do filme.
 function fillCheck(element, page, movie) {
   const row = state.checks.get(movie.id);
   const existing = Boolean(row?.card_existente);
+  const choose = needsChoice(movie, row) || Boolean(movie.filme_id && row?.opcoes?.length > 1);
   element.replaceChildren();
-  element.hidden = !existing;
+  element.hidden = !existing && !choose;
   element.closest(".movie-card")?.classList.toggle("is-existing", existing);
+  element.closest(".movie-card")?.classList.toggle("is-ambiguous", needsChoice(movie, row));
+  if (choose) element.append(createFilmChoice(movie, row));
   if (!existing) return;
   const chip = document.createElement(/^https?:/.test(row.card_existente) ? "a" : "span");
   chip.className = "check-chip is-trello";
@@ -2147,6 +2156,39 @@ function fillCheck(element, page, movie) {
   chip.title = "Este filme já tem card neste dia: o envio não cria outro.";
   if (chip.tagName === "A") { chip.href = row.card_existente; chip.target = "_blank"; chip.rel = "noreferrer"; }
   element.append(chip);
+}
+
+// o título bate com mais de um filme do banco e o ano não separa: quem envia escolhe
+function needsChoice(movie, row) {
+  return Boolean(row?.ambiguo && !movie.filme_id);
+}
+
+function createFilmChoice(movie, row) {
+  const label = document.createElement("label");
+  label.className = "film-choice";
+  const text = document.createElement("span");
+  text.textContent = movie.filme_id ? "filme" : "qual filme?";
+  const select = document.createElement("select");
+  select.className = "session-select film-choice-select";
+  select.setAttribute("aria-label", `Qual filme é ${movie.titulo}`);
+  const options = [["", "escolha…"], ...row.opcoes.map(option => [option.id, `${option.titulo}${option.ano ? ` (${option.ano})` : ""}`]), ["novo", "outro filme (cadastrar)"]];
+  for (const [value, name] of options) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = name;
+    option.selected = value === movie.filme_id;
+    if (!value) option.disabled = true;
+    select.append(option);
+  }
+  if (!movie.filme_id) select.selectedIndex = 0;
+  select.addEventListener("change", () => {
+    movie.filme_id = select.value;
+    state.isDirty = true;
+    renderSaveState();
+    scheduleCheck();
+  });
+  label.append(text, select);
+  return label;
 }
 
 function applySuggestion(button) {
@@ -2194,6 +2236,7 @@ function validateMovies() {
   for (const page of state.pages) {
     if (page.status !== PAGE_STATUS.SUCCESS) continue;
     for (const movie of page.movies) {
+      if (needsChoice(movie, state.checks.get(movie.id))) return `Escolha qual filme é "${movie.titulo.trim()}" na página ${page.originalPageNumber}.`;
       if (!movie.sessao.trim()) return `Informe a sessão na página ${page.originalPageNumber}.`;
       if (!movie.titulo.trim()) return `Informe o título na página ${page.originalPageNumber}.`;
       if (movie.ano_de_producao && !/^\d{4}$/.test(movie.ano_de_producao)) {
