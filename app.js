@@ -1064,9 +1064,10 @@ function renderPageGroup() {
 const isStd = movie => /^SESS[ÃA]O\s*DA\s*TARDE$/i.test(movie.sessao.trim());
 
 function stdGroups() {
-  // um título por filme (o mesmo filme pode passar em mais de um dia): editar ou tirar vale para todos
+  // só os filmes da página aberta; um título por filme (o mesmo filme pode passar em mais de um dia na página)
   const groups = [];
-  for (const page of state.pages.filter(item => item.status === PAGE_STATUS.SUCCESS)) {
+  const selected = getSelectedPage();
+  for (const page of state.pages.filter(item => item === selected && item.status === PAGE_STATUS.SUCCESS)) {
     for (const movie of page.movies.filter(isStd)) {
       const key = movie.titulo.trim().toUpperCase() || movie.id;
       const group = groups.find(item => item.key === key);
@@ -1082,15 +1083,15 @@ function renderStdSummary() {
   if (!box) return;
   const groups = stdGroups();
   box.replaceChildren();
-  box.hidden = !groups.length && !state.pages.some(page => page.status === PAGE_STATUS.SUCCESS);
+  box.hidden = !groups.length;
   if (box.hidden) return;
   const header = document.createElement("header");
   const title = document.createElement("h3");
   title.textContent = "Sessão da Tarde";
   const meta = document.createElement("span");
   meta.textContent = groups.length
-    ? `${groups.length} ${groups.length === 1 ? "título" : "títulos"} · um card só no Trello`
-    : "nenhum título";
+    ? `${groups.length} ${groups.length === 1 ? "título nesta página" : "títulos nesta página"} · um card só no Trello`
+    : "";
   header.append(title, meta);
   const list = document.createElement("ol");
   for (const group of groups) {
@@ -1141,9 +1142,8 @@ function renderStdSummary() {
   add.textContent = "+ título";
   add.title = "Incluir um filme na Sessão da Tarde";
   add.addEventListener("click", () => {
-    const page = getSelectedPage();
-    const target = page?.status === PAGE_STATUS.SUCCESS ? page : state.pages.find(item => item.status === PAGE_STATUS.SUCCESS);
-    if (!target) return;
+    const target = getSelectedPage();
+    if (target?.status !== PAGE_STATUS.SUCCESS) return;
     const movie = { id: createId(), titulo: "", ano_de_producao: "", sessao: "SESSÃO DA TARDE", data: "", inedito: false, poster: null, posterTouched: true };
     target.movies.push(movie);
     state.isDirty = true;
