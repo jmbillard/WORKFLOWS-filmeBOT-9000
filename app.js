@@ -492,7 +492,8 @@ function updatePreviewStatus(page = getSelectedPage()) {
     overlay.hidden = true;
     overlay.classList.remove("is-scanning", "is-loading");
     delete overlay.dataset.pageId;
-    elements.previewStatusMessage.textContent = page ? page.message : "";
+    elements.previewStatusMessage.textContent = !page ? ""
+      : state.phase === APP_PHASE.REVIEW ? `Página ${page.originalPageNumber}` : page.message;
     return;
   }
 
@@ -1086,9 +1087,11 @@ function renderStdSummary() {
   box.hidden = !groups.length;
   if (box.hidden) return;
   const header = document.createElement("header");
+  header.className = "std-divider";
   const title = document.createElement("h3");
   title.textContent = "Sessão da Tarde";
   const meta = document.createElement("span");
+  meta.hidden = true;
   meta.textContent = groups.length
     ? `${groups.length} ${groups.length === 1 ? "título nesta página" : "títulos nesta página"} · um card só no Trello`
     : "";
@@ -1151,7 +1154,6 @@ function renderStdSummary() {
     renderSaveState();
     box.querySelector(`[data-std-key="${movie.id}"] input`)?.focus();
   });
-  list.append(add);
   box.append(header, list);
 }
 
@@ -1179,6 +1181,15 @@ function createPageGroup(page) {
   nav.append(previous, title, next);
   const actions = document.createElement("div");
   actions.className = "page-group-actions";
+  if (page.status === PAGE_STATUS.SUCCESS) {
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "small-action add-movie-small";
+    add.dataset.addMovie = page.id;
+    add.title = "Adicionar um filme nesta página";
+    add.textContent = "+ Filme";
+    actions.append(add);
+  }
   actions.append(createStatusPill(page.status));
   if (page.status === PAGE_STATUS.ERROR) {
     const retry = document.createElement("button");
@@ -1204,15 +1215,7 @@ function createPageGroup(page) {
       ? createMovieCard(page, item.movie)
       : createGhostCard(page, item.poster)));
     group.append(grid);
-    const addContainer = document.createElement("div");
-    addContainer.className = "add-movie-container";
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "add-movie-button";
-    add.dataset.addMovie = page.id;
-    add.textContent = "+ Adicionar filme";
-    addContainer.append(add);
-    group.append(addContainer);
+    if (elements.stdSummary) group.append(elements.stdSummary);
   }
   return group;
 }
@@ -1223,8 +1226,13 @@ function createNavigationButton(label, direction, ariaLabel) {
   button.className = "page-navigation-button";
   button.dataset.navigatePage = String(direction);
   button.setAttribute("aria-label", ariaLabel);
-  button.textContent = label;
+  button.innerHTML = arrowIcon(direction);
   return button;
+}
+
+function arrowIcon(direction) {
+  const path = direction < 0 ? "M12.5 8H3.5M7.5 4 3.5 8l4 4" : "M3.5 8h9M8.5 4l4 4-4 4";
+  return `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
 function createStatusPill(status) {

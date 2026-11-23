@@ -2446,3 +2446,149 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* =========================================================
+   Revisão: título no alto, cards todos visíveis (sem rolagem),
+   Sessão da Tarde no mesmo bloco, depois de uma divisória
+   ========================================================= */
+
+@media (min-width:901px) {
+  .app-shell.phase-review .workspace {
+    grid-template-rows: auto minmax(240px, 1fr);
+  }
+
+  .app-shell.phase-review .results-side {
+    max-height: none;
+    overflow: visible;
+    padding: 18px 24px 16px;
+    background: #fff;
+    scrollbar-gutter: auto;
+  }
+
+  .app-shell.phase-review .results-toolbar {
+    position: static;
+    margin: 0 0 12px;
+    padding: 0;
+    background: none;
+  }
+
+  .app-shell.phase-review .results-toolbar h2 {
+    margin: 0;
+  }
+
+  .app-shell.phase-review .page-group {
+    box-shadow: none;
+    animation: none;
+  }
+}
+
+.page-group .std-summary {
+  margin: 2px 9px 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  animation: none;
+}
+
+.std-divider {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 10px !important;
+}
+
+.std-divider::before,
+.std-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border-strong);
+}
+
+.std-divider h3 {
+  color: #b5541c;
+  font-size: .62rem !important;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+
+.page-navigation-button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
+}
+
+.page-navigation-button svg,
+.icon-button svg {
+  display: block;
+}
+
+.page-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-movie-small {
+  white-space: nowrap;
+}
+
+
+.preview-document-info {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.preview-document-info p {
+  flex: none;
+  margin: 0;
+}
+
+.preview-document-info h2 {
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.app-shell.phase-review #preview-page-label {
+  display: none;
+}
+
+.app-shell.phase-review #preview-status-message {
+  color: #fff;
+  font-weight: 750;
+}
+
+
+@media (min-width:901px) {
+  .app-shell.phase-review .preview-view {
+    padding: 12px 0 14px;
+  }
+
+  .app-shell.phase-review .preview-view > :not(.preview-stage) {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .app-shell.phase-review .preview-header {
+    margin-bottom: 10px;
+  }
+
+  .app-shell.phase-review .preview-stage {
+    width: calc(100% - 28px);
+    margin: 0 14px;
+  }
+
+  .app-shell.phase-review .preview-footer,
+  .app-shell.phase-review .processing-progress {
+    display: none;
+  }
+}
