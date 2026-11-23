@@ -2765,3 +2765,120 @@ button:disabled {
 .queue-actions .actions-menu {
   order: -1;
 }
+
+
+/* Sessão da Tarde: levar o filme para as outras sessões */
+.std-out {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--blue-600);
+  cursor: pointer;
+  opacity: 0;
+  place-items: center;
+  transition: opacity .16s, transform .16s;
+}
+
+.std-summary li:hover .std-out,
+.std-out:focus-visible {
+  opacity: 1;
+}
+
+.std-out:hover {
+  transform: translateY(-2px);
+}
+
+
+/* Sessão: botão e menu no estilo do "…" */
+.session-field {
+  position: relative;
+}
+
+.session-button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 8px 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.session-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-button span.is-empty {
+  color: var(--text-tertiary);
+}
+
+.session-button svg {
+  flex: none;
+  color: var(--text-tertiary);
+  transition: transform .18s var(--ease-soft);
+}
+
+.session-button[aria-expanded="true"] {
+  border-color: var(--blue-400);
+}
+
+.session-button[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.session-menu {
+  right: auto;
+  left: 0;
+  width: max(100%, 220px);
+  max-height: 260px;
+  overflow-y: auto;
+  animation: picker-in .18s var(--ease-enter) both;
+}
+
+.session-menu button {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: .62rem;
+  font-weight: 650;
+}
+
+.session-menu button:hover,
+.session-menu button[aria-selected="true"] {
+  background: var(--blue-50);
+  color: var(--text-primary);
+}
+
+.session-menu .session-new {
+  color: var(--blue-600);
+}
+
+/* o menu de sessão pode passar da borda do bloco */
+.page-group,
+.movie-grid {
+  overflow: visible;
+}
+
+.page-group-header {
+  border-radius: 17px 17px 0 0;
+}
+
+/* o card com o menu de sessão aberto fica por cima dos vizinhos */
+.movie-card:has(.session-menu) {
+  z-index: 60;
+}

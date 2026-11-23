@@ -222,7 +222,11 @@ function registerEvents() {
   });
 
   elements.scanBeam.addEventListener("animationend", handleScanFinished);
+  document.addEventListener("click", event => {
+    if (!event.target.closest(".session-menu")) closeSessionMenus();
+  });
   document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeSessionMenus();
     if (event.key !== "Escape" || !state.pickingMovieId) return;
     state.pickingMovieId = null;
     renderPageGroup();
@@ -1134,7 +1138,24 @@ function renderStdSummary() {
       renderPosterMarks();
       renderSaveState();
     });
-    li.append(input, remove);
+    // de volta para a grade das outras sessões (a data e o resto dos dados continuam lá)
+    const out = document.createElement("button");
+    out.type = "button";
+    out.className = "std-out";
+    out.title = "Não é Sessão da Tarde: levar para as outras sessões";
+    out.setAttribute("aria-label", `Levar ${first.titulo || "o filme"} para as outras sessões`);
+    out.innerHTML = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 12.5v-9M4 7.5l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    out.addEventListener("click", () => {
+      for (const movie of group.movies) movie.sessao = "";
+      state.isDirty = true;
+      renderPageGroup();
+      renderPosterMarks();
+      renderSaveState();
+      const card = document.querySelector(`[data-movie-card="${first.id}"]`);
+      card?.classList.add("is-flash");
+      card?.querySelector(".session-button")?.focus();
+    });
+    li.append(input, out, remove);
     li.addEventListener("pointerenter", () => highlightPosterMark(first.poster));
     li.addEventListener("pointerleave", () => highlightPosterMark(null));
     list.append(li);
@@ -1570,49 +1591,84 @@ const NEW_SESSION = "__nova__";
 
 // Sessão: lista das sessões cadastradas, com "+ Nova sessão…" que vira um campo de texto
 function createSessionField(page, movie) {
+  // Sessão: menu no mesmo estilo do "…" (o do sistema destoava), com "+ Nova sessão…" no fim
   const container = document.createElement("div");
   container.className = "field session-field";
   const id = `${page.id}-${movie.id}-sessao`;
   const label = document.createElement("label");
   label.htmlFor = id;
   label.textContent = "Sessão";
-  const select = document.createElement("select");
-  select.id = id;
-  select.className = "session-select";
   const current = movie.sessao.trim().toUpperCase();
-  const options = [...new Set([...state.sessions, ...(current ? [current] : [])])].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  if (!current) select.append(new Option("Escolha a sessão", "", true, true));
-  for (const name of options) select.append(new Option(name, name, false, name === current));
-  select.append(new Option("+ Nova sessão…", NEW_SESSION));
-  select.firstElementChild.disabled = !current;
-  select.addEventListener("change", () => {
-    if (select.value === NEW_SESSION) {
-      const input = document.createElement("input");
-      input.type = "text";
-      input.id = id;
-      input.placeholder = "Nome da sessão";
-      const done = () => {
-        const value = input.value.trim().toUpperCase();
-        if (value) {
-          addSession(value);
-          setMovieSession(movie, value);
-        } else {
-          renderPageGroup();
-        }
-      };
-      input.addEventListener("keydown", event => {
-        if (event.key === "Enter") input.blur();
-        if (event.key === "Escape") { input.value = ""; input.blur(); }
-      });
-      input.addEventListener("blur", done, { once: true });
-      select.replaceWith(input);
-      input.focus();
-      return;
-    }
-    setMovieSession(movie, select.value);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = id;
+  button.className = "session-button";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+  const text = document.createElement("span");
+  text.textContent = current || "Escolha a sessão";
+  text.classList.toggle("is-empty", !current);
+  button.append(text);
+  button.insertAdjacentHTML("beforeend", '<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>');
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    const open = container.querySelector(".session-menu");
+    closeSessionMenus();
+    if (!open) openSessionMenu(container, button, movie, current);
   });
-  container.append(label, select);
+  container.append(label, button);
   return container;
+}
+
+function closeSessionMenus() {
+  for (const menu of document.querySelectorAll(".session-menu")) {
+    menu.previousElementSibling?.setAttribute("aria-expanded", "false");
+    menu.remove();
+  }
+}
+
+function openSessionMenu(container, button, movie, current) {
+  const menu = document.createElement("div");
+  menu.className = "menu-popover session-menu";
+  menu.setAttribute("role", "listbox");
+  const options = [...new Set([...state.sessions, ...(current ? [current] : [])])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  for (const name of options) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(name === current));
+    option.textContent = name;
+    option.addEventListener("click", () => { closeSessionMenus(); setMovieSession(movie, name); });
+    menu.append(option);
+  }
+  if (options.length) menu.append(document.createElement("hr"));
+  const create = document.createElement("button");
+  create.type = "button";
+  create.className = "session-new";
+  create.textContent = "+ Nova sessão…";
+  create.addEventListener("click", () => {
+    closeSessionMenus();
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = button.id;
+    input.placeholder = "Nome da sessão";
+    const done = () => {
+      const value = input.value.trim().toUpperCase();
+      if (value) { addSession(value); setMovieSession(movie, value); }
+      else { renderPageGroup(); }
+    };
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") input.blur();
+      if (event.key === "Escape") { input.value = ""; input.blur(); }
+    });
+    input.addEventListener("blur", done, { once: true });
+    button.replaceWith(input);
+    input.focus();
+  });
+  menu.append(create);
+  button.after(menu);
+  button.setAttribute("aria-expanded", "true");
+  menu.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
 
 function setMovieSession(movie, value) {
@@ -1620,11 +1676,9 @@ function setMovieSession(movie, value) {
   movie.sessao = value;
   state.isDirty = true;
   renderSaveState();
-  // entrar ou sair da Sessão da Tarde muda de lugar (card na grade × título na lista de cima)
-  if (wasStd !== isStd(movie) || !document.querySelector(`[data-movie-card="${movie.id}"] .session-select`)) {
-    renderPageGroup();
-    renderPosterMarks();
-  }
+  // redesenha: a sessão nova aparece no botão, e entrar ou sair da Sessão da Tarde muda o filme de lugar
+  renderPageGroup();
+  renderPosterMarks();
   scheduleCheck();
 }
 
