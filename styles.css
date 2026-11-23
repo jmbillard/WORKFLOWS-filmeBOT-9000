@@ -2919,32 +2919,18 @@ button:disabled {
    Pequenos movimentos (os mesmos da extensão do Padeiro)
    ========================================================= */
 
-/* Enviar para o Trello: brilho que atravessa, sobe um pouco, aperta no clique */
+/* Enviar para o Trello: sobe um pouco e aperta no clique (sem reflexo) */
 #save-button {
   position: relative;
   overflow: hidden;
   isolation: isolate;
   transition: transform 220ms var(--ease-soft), box-shadow 220ms ease, filter 220ms ease;
 }
-#save-button::after {
-  position: absolute;
-  z-index: -1;
-  width: 40%;
-  height: 200%;
-  top: -50%;
-  left: -70%;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255/38%), transparent);
-  content: "";
-  pointer-events: none;
-  transform: rotate(18deg);
-  transition: left 650ms var(--ease-enter);
-}
 #save-button:hover:not(:disabled) {
   filter: brightness(1.06);
   box-shadow: 0 10px 22px rgb(81 132 248/32%);
   transform: translateY(-1px);
 }
-#save-button:hover:not(:disabled)::after { left: 130%; }
 #save-button:active:not(:disabled) {
   transform: translateY(0) scale(.97);
   box-shadow: 0 4px 12px rgb(81 132 248/24%);
@@ -2970,7 +2956,7 @@ button:disabled {
 .more-actions:hover svg circle:nth-child(3) { animation-delay: 220ms; }
 @keyframes icon-dot {
   0%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-3.5px); }
+  40% { transform: translateY(-4px); }
 }
 
 /* × de excluir: gira ao passar e dá meia-volta no clique */
@@ -3023,6 +3009,5 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #save-button::after { display: none; }
   #save-button.is-busy { animation: none; }
 }
