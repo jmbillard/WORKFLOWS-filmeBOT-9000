@@ -214,6 +214,17 @@ function registerEvents() {
     renderPosterMarks();
   });
   window.addEventListener("resize", handlePreviewResize, { passive: true });
+  // o preview muda de tamanho também ao trocar de fase (revisão: largura toda)
+  if (window.ResizeObserver) {
+    let lastWidth = 0;
+    new ResizeObserver(([entry]) => {
+      const width = Math.round(entry.contentRect.width);
+      if (width && Math.abs(width - lastWidth) > 2) {
+        lastWidth = width;
+        handlePreviewResize();
+      }
+    }).observe(elements.previewStage);
+  }
   window.addEventListener("beforeunload", event => {
     if (hasActivePages() || state.isDirty) {
       event.preventDefault();
@@ -238,6 +249,7 @@ function setPhase(phase) {
   );
   elements.appShell.classList.add(`phase-${phase}`);
   elements.previewView.hidden = phase === APP_PHASE.UPLOAD;
+  if (phase === APP_PHASE.REVIEW) handlePreviewResize();
   elements.resultsSide.setAttribute(
     "aria-hidden", phase === APP_PHASE.REVIEW ? "false" : "true"
   );
@@ -402,13 +414,15 @@ async function renderSelectedPreview() {
 
   try {
     const pdfPage = await state.pdfDocument.getPage(state.selectedPageNumber);
-    const availableWidth = Math.max(320, elements.previewStage.clientWidth - 20);
-    const availableHeight = Math.max(200, elements.previewStage.clientHeight - 20);
+    // na revisão a página ocupa a largura toda (com rolagem); antes disso, cabe inteira
+    const fillWidth = state.phase === APP_PHASE.REVIEW;
+    const gap = fillWidth ? 0 : 20;
+    const availableWidth = Math.max(320, elements.previewStage.clientWidth - gap);
+    const availableHeight = Math.max(200, elements.previewStage.clientHeight - gap);
     const base = pdfPage.getViewport({ scale: 1 });
-    const scale = Math.min(
-      availableWidth / base.width,
-      availableHeight / base.height
-    );
+    const scale = fillWidth
+      ? availableWidth / base.width
+      : Math.min(availableWidth / base.width, availableHeight / base.height);
     const viewport = pdfPage.getViewport({ scale });
     const canvas = elements.previewCanvas;
     const context = canvas.getContext("2d");
