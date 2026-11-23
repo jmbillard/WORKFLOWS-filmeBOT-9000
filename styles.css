@@ -2592,3 +2592,19 @@ button:disabled {
     display: none;
   }
 }
+
+/* parte azul: só o nome do documento, com pouco espaço em cima */
+@media (min-width:901px) {
+  .app-shell.phase-review .preview-view {
+    padding-top: 8px;
+  }
+
+  .app-shell.phase-review .preview-header {
+    min-height: 0;
+    margin-bottom: 8px;
+  }
+
+  .app-shell.phase-review .preview-document-info p {
+    display: none;
+  }
+}
