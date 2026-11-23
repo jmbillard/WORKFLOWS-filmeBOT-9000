@@ -17,7 +17,7 @@ const CONFIG = Object.freeze({
   // { acao: "conferir" }: para cada filme, o que o envio vai fazer — filme do
   // acervo ou novo, ano, sessão, card que já existe e artes que já existem.
   // desligada: a conferência das artes é feita pelo PROMeiro quando a claquete entra
-  CHECK_ON_SAVE_WEBHOOK: false,
+  CHECK_ON_SAVE_WEBHOOK: true,
   CHECK_DEBOUNCE_MS: 700,
   CHECK_TIMEOUT_MS: 15000,
   HEALTHCHECK_URL: "/api/healthcheck",
@@ -642,6 +642,7 @@ async function processPage(page) {
     // as sessões cadastradas (o fluxo manda junto) e as que vieram nos filmes viram as opções do campo
     for (const name of [...result.sessions, ...page.movies.map(movie => movie.sessao)]) addSession(name);
     assignPosters(page);
+    recoverPostersWithData(page);
     page.status = PAGE_STATUS.SUCCESS;
     page.message = `${page.movies.length} filme(s) identificado(s).`;
     state.isDirty = true;
@@ -728,7 +729,25 @@ async function extractPageImages(pageNumber) {
   const texts = await getTextLines(pdfPage, viewport).catch(() => []);
   const size = { width: canvas.width, height: canvas.height };
   canvas.width = canvas.height = 0;
-  return { pageImage, posters, texts, size };
+  return { pageImage, posters, texts, size, vagas: cancelledSlots(posters, texts) };
+}
+
+// "CANCELADO" escrito no lugar de um pôster: uma vaga sem filme, do tamanho de um
+// pôster, na coluna do texto e na altura da fileira de pôsteres mais próxima.
+function cancelledSlots(posters, texts) {
+  if (!posters.length) return [];
+  const median = values => values.slice().sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const width = median(posters.map(p => p.box.width));
+  const height = median(posters.map(p => p.box.height));
+  return texts
+    .filter(line => /^CANCELAD[OA]S?$/i.test(String(line.str).trim()))
+    .map(line => {
+      const center = line.x + line.width / 2;
+      const row = posters.reduce((best, p) => !best || Math.abs(p.box.y + p.box.height / 2 - line.top) < Math.abs(best.box.y + best.box.height / 2 - line.top) ? p : best, null);
+      return { box: { x: Math.round(center - width / 2), y: row.box.y, width, height }, text: "CANCELADO" };
+    })
+    .filter(slot => !posters.some(p => Math.min(p.box.x + p.box.width, slot.box.x + slot.box.width) - Math.max(p.box.x, slot.box.x) > width * 0.3
+      && Math.abs(p.box.y - slot.box.y) < height * 0.5));
 }
 
 async function getImageBoxes(pdfPage, viewport) {
@@ -803,10 +822,7 @@ function assignPosters(page) {
   const byTitle = page.movies.map(movie => {
     const key = compact(movie.titulo);
     if (key.length < 2) return null;
-    const lines = images.texts.filter(line => {
-      const text = compact(line.str);
-      return text && (text === key || (text.startsWith(key) && key.length >= 4) || (key.startsWith(text) && text.length >= 6));
-    });
+    const lines = images.texts.filter(line => sameTitle(line.str, movie.titulo));
     let best = null;
     for (const line of lines) {
       images.posters.forEach((poster, index) => {
@@ -828,6 +844,34 @@ function assignPosters(page) {
     if (chosen !== null) used.add(chosen);
     movie.poster = chosen;
   });
+}
+
+// O título lido pela IA e o texto do PDF são o mesmo filme? Tolera artigos e pequenas
+// diferenças ("TOMB RAIDER: A ORIGEM" e "TOMB RAIDER: ORIGEM").
+const TITLE_SMALL_WORDS = new Set(["a", "o", "as", "os", "um", "uma", "the", "de", "da", "do", "e"]);
+function titleWords(text) {
+  return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " e ").toLowerCase()
+    .split(/[^a-z0-9]+/).filter(word => word && !TITLE_SMALL_WORDS.has(word)).join("");
+}
+function sameTitle(text, title) {
+  const a = compact(text), b = compact(title);
+  if (!a || !b) return false;
+  if (a === b || (a.startsWith(b) && b.length >= 4) || (b.startsWith(a) && a.length >= 6)) return true;
+  const x = titleWords(text), y = titleWords(title);
+  if (x.length < 6 || y.length < 6) return false;
+  if (x === y) return true;
+  // continuações não se confundem: os números têm de ser os mesmos
+  if ((x.match(/\d+/g) || []).join() !== (y.match(/\d+/g) || []).join()) return false;
+  return levenshtein(x, y) <= Math.floor(Math.max(x.length, y.length) * 0.12);
+}
+function levenshtein(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j += 1) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
 }
 
 function filterPosterBoxes(boxes, canvas) {
@@ -1237,7 +1281,7 @@ function createPageGroup(page) {
     if (columns) grid.style.setProperty("--page-columns", String(columns));
     grid.append(...layoutItems(page).map(item => item.movie
       ? createMovieCard(page, item.movie)
-      : createGhostCard(page, item.poster)));
+      : item.vaga !== undefined ? createCancelledCard() : createGhostCard(page, item.poster)));
     group.append(grid);
     if (elements.stdSummary) group.append(elements.stdSummary);
   }
@@ -1280,10 +1324,14 @@ function layoutItems(page) {
   // a Sessão da Tarde não tem card na grade: o título dela se revisa na lista de cima
   const posters = page.images?.posters || [];
   if (!posters.length) return page.movies.filter(movie => !isStd(movie)).map(movie => ({ movie }));
-  const items = posters.flatMap((_, index) => {
-    const movie = page.movies.find(item => item.poster === index);
+  const slots = posters.map((poster, index) => ({ box: poster.box, poster: index }))
+    .concat((page.images.vagas || []).map((vaga, index) => ({ box: vaga.box, vaga: index })))
+    .sort((a, b) => Math.abs(a.box.y - b.box.y) > Math.min(a.box.height, b.box.height) / 2 ? a.box.y - b.box.y : a.box.x - b.box.x);
+  const items = slots.flatMap(slot => {
+    if (slot.vaga !== undefined) return [{ vaga: slot.vaga }];
+    const movie = page.movies.find(item => item.poster === slot.poster);
     if (movie && isStd(movie)) return [];
-    return [movie ? { movie } : { poster: index }];
+    return [movie ? { movie } : { poster: slot.poster }];
   });
   return items.concat(page.movies.filter(movie => !posters[movie.poster] && !isStd(movie)).map(movie => ({ movie })));
 }
@@ -1291,7 +1339,7 @@ function layoutItems(page) {
 // Quantos pôsteres a fileira mais cheia da página tem: a grade de cards usa
 // essas colunas, para cada card ficar na mesma coluna do seu pôster.
 function pageColumns(page) {
-  const posters = page.images?.posters || [];
+  const posters = (page.images?.posters || []).concat(page.images?.vagas || []);
   if (!posters.length) return 0;
   const rows = [];
   for (const { box } of posters) {
@@ -1301,6 +1349,64 @@ function pageColumns(page) {
     else rows.push({ top: box.y, bottom: box.y + box.height, count: 1 });
   }
   return Math.max(...rows.map(row => row.count));
+}
+
+// Pôster que sobrou sem filme mas tem título e ano embaixo: é filme (a IA às vezes o
+// descarta, por exemplo com um CANCELADO escrito ao lado). Se o título for de um filme
+// da página (Sessão da Tarde com outra grafia), o pôster vai para ele; senão vira um
+// filme com os dados do PDF: data do alto da coluna e sessão do alto da coluna ou da fileira.
+function recoverPostersWithData(page) {
+  const posters = page.images?.posters || [];
+  if (!posters.length) return;
+  const used = new Set(page.movies.map(movie => movie.poster).filter(index => index !== null));
+  posters.forEach((poster, index) => {
+    if (used.has(index)) return;
+    const { title, year } = textBelowPoster(page, index);
+    if (!title || !year) return;
+    const owner = page.movies.find(movie => movie.poster === null && sameTitle(title, movie.titulo));
+    if (owner) { owner.poster = index; used.add(index); return; }
+    if (page.movies.some(movie => sameTitle(title, movie.titulo))) return;
+    const header = textAbovePoster(page, index);
+    const sessao = header.session || rowSession(page, index);
+    page.movies.push({ ...normalizeMovie({ titulo: title.toUpperCase(), ano_de_producao: year, sessao, data: header.date }),
+      poster: index, posterTouched: true, fromPdf: true });
+    used.add(index);
+  });
+}
+
+// O alto da coluna do pôster: a data (dd/mm) e o nome da sessão, quando é texto.
+function textAbovePoster(page, index) {
+  const { box } = page.images.posters[index];
+  const lines = page.images.texts
+    .filter(line => {
+      const overlap = Math.min(box.x + box.width, line.x + line.width) - Math.max(box.x, line.x);
+      const gap = box.y - line.top;
+      return overlap > 0 && gap > 0 && gap < box.height * 0.7;
+    })
+    .sort((a, b) => b.top - a.top);
+  const dateLine = lines.find(line => /\b\d{1,2}\/\d{1,2}\b/.test(line.str));
+  let date = "";
+  const m = dateLine?.str.match(/\b(\d{1,2})\/(\d{1,2})\b/);
+  if (m) {
+    const now = new Date();
+    const day = Number(m[1]), month = Number(m[2]);
+    const year = now.getFullYear() + (month < now.getMonth() + 1 ? 1 : 0);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  const sessions = [...state.sessions];
+  const session = lines.map(line => sessions.find(name => compact(name) === compact(line.str))).find(Boolean) || "";
+  return { date, session };
+}
+
+// A sessão dos filmes da mesma fileira, quando todos são da mesma (ex.: Sessão da Tarde).
+function rowSession(page, index) {
+  const { box } = page.images.posters[index];
+  const center = box.y + box.height / 2;
+  const names = new Set(page.movies
+    .filter(movie => movie.poster !== null && page.images.posters[movie.poster])
+    .filter(movie => { const b = page.images.posters[movie.poster].box; return center >= b.y && center <= b.y + b.height; })
+    .map(movie => movie.sessao).filter(Boolean));
+  return names.size === 1 ? [...names][0] : "";
 }
 
 // O texto logo abaixo do pôster na página (título, "CANCELADO"...), para o fantasma.
@@ -1347,6 +1453,23 @@ function createGhostCard(page, index) {
   card.append(thumb, body);
   card.addEventListener("pointerenter", () => highlightPosterMark(index));
   card.addEventListener("pointerleave", () => highlightPosterMark(null));
+  return card;
+}
+
+// a vaga de uma sessão cancelada: só ocupa a coluna, para a grade seguir a página
+function createCancelledCard() {
+  const card = document.createElement("article");
+  card.className = "movie-card is-ghost is-cancelled";
+  const thumb = document.createElement("div");
+  thumb.className = "poster-thumb is-ghost";
+  const body = document.createElement("div");
+  body.className = "ghost-body";
+  const label = document.createElement("strong");
+  label.textContent = "Cancelado";
+  const hint = document.createElement("span");
+  hint.textContent = "sessão cancelada na grade";
+  body.append(label, hint);
+  card.append(thumb, body);
   return card;
 }
 
@@ -2010,61 +2133,21 @@ function compact(text) {
   return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, "e").replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
+// Da conferência, a tela mostra só o que já tem card: o selo leva ao card no Trello
+// e o envio não cria de novo (o n8n também confere).
 function fillCheck(element, page, movie) {
   const row = state.checks.get(movie.id);
+  const existing = Boolean(row?.card_existente);
   element.replaceChildren();
-  element.hidden = !row;
-  if (!row) return;
-  const chip = (text, tone, title) => {
-    const item = document.createElement("span");
-    item.className = `check-chip ${tone}`;
-    item.textContent = text;
-    if (title) item.title = title;
-    element.append(item);
-    return item;
-  };
-  const suggest = (label, field, value) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "check-apply";
-    button.dataset.pageId = page.id;
-    button.dataset.movieId = movie.id;
-    button.dataset.applyField = field;
-    button.dataset.applyValue = value;
-    button.textContent = label;
-    element.append(button);
-  };
-
-  if (row.card_existente) {
-    const item = chip("já tem card", "is-muted", "Este filme já tem card neste dia: o envio não duplica.");
-    if (/^https?:/.test(row.card_existente)) {
-      const link = document.createElement("a");
-      link.href = row.card_existente;
-      link.target = "_blank";
-      link.rel = "noreferrer";
-      link.textContent = "já tem card ↗";
-      item.replaceChildren(link);
-    }
-    return;
-  }
-  if (!row.sessao_ok) chip("sessão sem cadastro", "is-danger", "A sessão não está nas atrações (tipo Sessão de filme).");
-  if (row.novo) chip("filme novo", "is-warning", "Entra no acervo de filmes no envio.");
-  else {
-    chip("no acervo", "is-success", row.filme_titulo || "");
-    if (row.filme_titulo && row.filme_titulo !== movie.titulo.trim() && compact(row.filme_titulo) === compact(movie.titulo)) {
-      suggest(`usar “${row.filme_titulo}”`, "titulo", row.filme_titulo);
-    }
-    if (row.ano_diferente && row.ano) {
-      chip(`acervo: ${row.ano}`, "is-warning", "O ano do PDF é diferente do ano no acervo.");
-      suggest(`usar ${row.ano}`, "ano_de_producao", String(row.ano));
-    } else if (!movie.ano_de_producao.trim() && row.ano) {
-      suggest(`ano ${row.ano}`, "ano_de_producao", String(row.ano));
-    }
-  }
-  const novas = Array.isArray(row.artes_novas) ? row.artes_novas : [];
-  const existentes = Array.isArray(row.artes_existentes) ? row.artes_existentes : [];
-  chip(`${novas.length} ${novas.length === 1 ? "arte" : "artes"}`, "is-neutral", novas.join(", "));
-  if (existentes.length) chip(`${existentes.length} já ${existentes.length === 1 ? "existe" : "existem"}`, "is-muted", existentes.join(", "));
+  element.hidden = !existing;
+  element.closest(".movie-card")?.classList.toggle("is-existing", existing);
+  if (!existing) return;
+  const chip = document.createElement(/^https?:/.test(row.card_existente) ? "a" : "span");
+  chip.className = "check-chip is-trello";
+  chip.textContent = "no Trello ↗";
+  chip.title = "Este filme já tem card neste dia: o envio não cria outro.";
+  if (chip.tagName === "A") { chip.href = row.card_existente; chip.target = "_blank"; chip.rel = "noreferrer"; }
+  element.append(chip);
 }
 
 function applySuggestion(button) {
@@ -2086,11 +2169,8 @@ function checkSummary() {
   const rows = [...state.checks.values()];
   const existing = rows.filter(row => row.card_existente).length;
   const fresh = rows.length - existing;
-  const newMovies = rows.filter(row => !row.card_existente && row.novo).length;
-  const parts = [`${fresh} ${fresh === 1 ? "card novo" : "cards novos"}`];
-  if (existing) parts.push(`${existing} já ${existing === 1 ? "existe" : "existem"}`);
-  if (newMovies) parts.push(`${newMovies} ${newMovies === 1 ? "filme novo" : "filmes novos"} no acervo`);
-  return parts.join(" · ");
+  if (!existing) return "";
+  return `${fresh} ${fresh === 1 ? "card novo" : "cards novos"} · ${existing} já no Trello`;
 }
 
 function parseSaveResponse(text) {
@@ -2134,9 +2214,11 @@ function canSave() {
 
 function renderSaveState() {
   elements.saveButton.disabled = !canSave();
+  elements.saveButton.classList.toggle("is-busy", state.isSaving);
   if (state.isSaving) {
     elements.saveButton.textContent = "Salvando…";
-    return showSaveMessage("Enviando as informações revisadas.", "info");
+    // o próprio botão mostra o envio (listras correndo): sem aviso em cima
+    return hideSaveMessage();
   }
   elements.saveButton.textContent = state.isDirty ? "Enviar para o Trello" : "Enviado";
   if (!state.pages.length) return hideSaveMessage();

@@ -2882,3 +2882,147 @@ button:disabled {
 .movie-card:has(.session-menu) {
   z-index: 60;
 }
+
+/* já tem card no Trello: selo verde (link para o card) e o card um pouco apagado */
+.check-chip.is-trello {
+  background: var(--success-bg);
+  color: var(--success);
+  text-decoration: none;
+}
+.check-chip.is-trello:hover { filter: brightness(.95); }
+.movie-card.is-existing { opacity: .72; transition: opacity .2s var(--ease-soft); }
+.movie-card.is-existing:hover,
+.movie-card.is-existing:focus-within { opacity: 1; }
+
+/* sessão cancelada na grade: a vaga vazia na coluna do pôster */
+.movie-card.is-cancelled .poster-thumb.is-ghost {
+  aspect-ratio: 2 / 3;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--border-strong) 35%, transparent) 6px 7px);
+}
+.movie-card.is-cancelled .ghost-body strong {
+  text-decoration: none;
+  color: var(--danger);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* processamento igual à revisão: só o nome do documento (sem "Documento original" nem a pílula da página) */
+#preview-page-label,
+.preview-document-info p {
+  display: none;
+}
+
+
+/* =========================================================
+   Pequenos movimentos (os mesmos da extensão do Padeiro)
+   ========================================================= */
+
+/* Enviar para o Trello: brilho que atravessa, sobe um pouco, aperta no clique */
+#save-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform 220ms var(--ease-soft), box-shadow 220ms ease, filter 220ms ease;
+}
+#save-button::after {
+  position: absolute;
+  z-index: -1;
+  width: 40%;
+  height: 200%;
+  top: -50%;
+  left: -70%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255/38%), transparent);
+  content: "";
+  pointer-events: none;
+  transform: rotate(18deg);
+  transition: left 650ms var(--ease-enter);
+}
+#save-button:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 22px rgb(81 132 248/32%);
+  transform: translateY(-1px);
+}
+#save-button:hover:not(:disabled)::after { left: 130%; }
+#save-button:active:not(:disabled) {
+  transform: translateY(0) scale(.97);
+  box-shadow: 0 4px 12px rgb(81 132 248/24%);
+}
+/* enviando: listras correndo no fundo do botão */
+#save-button.is-busy {
+  background-image:
+    repeating-linear-gradient(115deg, rgb(255 255 255/0%) 0 12px, rgb(255 255 255/16%) 12px 24px),
+    linear-gradient(135deg, var(--blue-400), var(--blue-600));
+  background-size: 52px 100%, 100% 100%;
+  animation: send-stripes 900ms linear infinite;
+  opacity: 1;
+}
+@keyframes send-stripes { to { background-position: 52px 0, 0 0; } }
+
+/* três pontinhos: quicam em sequência, como "digitando" */
+.more-actions svg circle {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.more-actions:hover svg circle { animation: icon-dot 560ms var(--ease-soft); }
+.more-actions:hover svg circle:nth-child(2) { animation-delay: 110ms; }
+.more-actions:hover svg circle:nth-child(3) { animation-delay: 220ms; }
+@keyframes icon-dot {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-3.5px); }
+}
+
+/* × de excluir: gira ao passar e dá meia-volta no clique */
+.movie-card:hover .remove-movie-button:hover,
+.remove-movie-button:focus-visible {
+  transform: rotate(90deg) scale(1.15);
+}
+.movie-card .remove-movie-button:active {
+  transform: rotate(180deg) scale(.86);
+}
+
+/* setas das páginas: a seta avança para o lado em que vai */
+.page-navigation-button {
+  transition: transform 220ms var(--ease-soft), border-color 180ms ease, background-color 180ms ease;
+}
+.page-navigation-button svg { transition: transform 260ms var(--ease-soft); }
+.page-navigation-button:hover:not(:disabled) {
+  border-color: var(--blue-200, #bcd0ff);
+  background: var(--blue-50, #f3f7ff);
+}
+.page-navigation-button[data-navigate-page="1"]:hover:not(:disabled) svg { transform: translateX(2px); }
+.page-navigation-button[data-navigate-page="-1"]:hover:not(:disabled) svg { transform: translateX(-2px); }
+.page-navigation-button:active:not(:disabled) { transform: scale(.9); }
+
+/* botõezinhos (+ Filme, Reenviar): sobem um pouco */
+.small-action { transition: transform 220ms var(--ease-soft), border-color 180ms ease, background-color 180ms ease; }
+.small-action:hover:not(:disabled) {
+  border-color: var(--blue-200, #bcd0ff);
+  background: var(--blue-50, #f3f7ff);
+  transform: translateY(-1px);
+}
+.small-action:active:not(:disabled) { transform: translateY(0) scale(.96); }
+
+/* "no Trello ↗": a setinha escapa para fora ao passar */
+.check-chip.is-trello { transition: filter 180ms ease, transform 220ms var(--ease-soft); }
+.check-chip.is-trello:hover { transform: translateY(-1px); }
+
+/* Inédito: o quadrado dá um pulinho ao marcar */
+.premiere-field input:checked { animation: check-pop 360ms var(--ease-soft); }
+@keyframes check-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+/* foco pelo teclado: contorno fino, sem halo */
+:where(button, summary, a, input, select):focus-visible {
+  outline: 1px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #save-button::after { display: none; }
+  #save-button.is-busy { animation: none; }
+}
