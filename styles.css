@@ -2317,7 +2317,7 @@ button:disabled {
   gap: 16px;
   overflow-y: auto;
   padding: 4px 2px 12px;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   scrollbar-width: none;
 }
 
@@ -2425,4 +2425,24 @@ button:disabled {
 
 .page-thumb[data-status="error"] .page-thumb-label {
   color: #ffd2d2;
+}
+
+/* grade de páginas: 3 por linha (2 em telas estreitas) */
+.page-thumbs {
+  gap: 22px 20px;
+}
+
+.page-thumb-label {
+  font-size: .66rem;
+}
+
+.page-thumb-loader i {
+  width: 34px;
+  height: 34px;
+}
+
+@media (max-width:900px) {
+  .page-thumbs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

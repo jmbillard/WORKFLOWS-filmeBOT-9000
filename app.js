@@ -951,7 +951,7 @@ async function drawThumb(page, canvas) {
   try {
     const pdfPage = await state.pdfDocument.getPage(page.originalPageNumber);
     const base = pdfPage.getViewport({ scale: 1 });
-    const viewport = pdfPage.getViewport({ scale: 480 / base.width });
+    const viewport = pdfPage.getViewport({ scale: 960 / base.width });
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);
     await pdfPage.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
