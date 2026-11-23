@@ -16,7 +16,8 @@ const CONFIG = Object.freeze({
   // Conferência antes do envio (só leitura), pelo mesmo webhook do envio com
   // { acao: "conferir" }: para cada filme, o que o envio vai fazer — filme do
   // acervo ou novo, ano, sessão, card que já existe e artes que já existem.
-  CHECK_ON_SAVE_WEBHOOK: true,
+  // desligada: a conferência das artes é feita pelo PROMeiro quando a claquete entra
+  CHECK_ON_SAVE_WEBHOOK: false,
   CHECK_DEBOUNCE_MS: 700,
   CHECK_TIMEOUT_MS: 15000,
   HEALTHCHECK_URL: "/api/healthcheck",
@@ -956,19 +957,23 @@ function renderStdSummary() {
   box.replaceChildren();
   box.hidden = !items.length;
   if (!items.length) return;
-  const rows = items.map(item => ({ ...item, check: state.checks.get(item.movie.id) }));
-  const toMake = rows.filter(row => !row.check || (row.check.artes_novas || []).includes((row.check.artes || [])[0]));
+  // um título por filme (o mesmo filme pode passar em mais de um dia)
+  const seen = new Set();
+  const rows = items.filter(({ movie }) => {
+    const key = movie.titulo.trim().toUpperCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const header = document.createElement("header");
   const title = document.createElement("h3");
   title.textContent = "Sessão da Tarde";
   const meta = document.createElement("span");
-  meta.textContent = `${rows.length} ${rows.length === 1 ? "título" : "títulos"} · ${toMake.length} a produzir · um card só no Trello`;
+  meta.textContent = `${rows.length} ${rows.length === 1 ? "título" : "títulos"} · um card só no Trello`;
   header.append(title, meta);
   const list = document.createElement("ol");
   for (const row of rows) {
     const li = document.createElement("li");
-    const done = row.check && !toMake.includes(row);
-    li.classList.toggle("is-done", Boolean(done));
     const poster = row.page.images?.posters[row.movie.poster];
     if (poster) {
       const image = document.createElement("img");
@@ -976,12 +981,10 @@ function renderStdSummary() {
       image.alt = "";
       li.append(image);
     }
-    const date = document.createElement("time");
-    date.textContent = row.movie.data ? row.movie.data.slice(8, 10) + "/" + row.movie.data.slice(5, 7) : "--/--";
     const name = document.createElement("button");
     name.type = "button";
     name.className = "std-title";
-    name.textContent = row.movie.titulo + (row.movie.ano_de_producao ? ` (${row.movie.ano_de_producao})` : "");
+    name.textContent = row.movie.titulo;
     name.title = `Ver na página ${row.page.originalPageNumber}`;
     name.addEventListener("click", () => {
       selectPage(row.page.originalPageNumber);
@@ -991,10 +994,7 @@ function renderStdSummary() {
         card?.classList.add("is-flash");
       });
     });
-    const status = document.createElement("span");
-    status.className = "std-status";
-    status.textContent = !row.check ? "" : done ? "✓ já existe" : row.check.novo ? "filme novo" : "a produzir";
-    li.append(date, name, status);
+    li.append(name);
     list.append(li);
   }
   box.append(header, list);
@@ -1216,8 +1216,13 @@ function createMovieCard(page, movie) {
   const year = createTextField(page, movie, "ano_de_producao", "Ano", movie.ano_de_producao);
   year.querySelector("input").inputMode = "numeric";
   year.querySelector("input").maxLength = 4;
-  const date = createTextField(page, movie, "data", "Data de exibição", movie.data, "date");
-  bottom.append(year, date);
+  // Sessão da Tarde é arte padrão (o que se produz é o título): a data não aparece
+  if (isStd(movie)) {
+    bottom.classList.add("is-std");
+    bottom.append(year);
+  } else {
+    bottom.append(year, createTextField(page, movie, "data", "Data de exibição", movie.data, "date"));
+  }
   const check = document.createElement("div");
   check.className = "movie-check";
   check.dataset.checkFor = movie.id;
@@ -1818,7 +1823,7 @@ function validateMovies() {
       if (movie.ano_de_producao && !/^\d{4}$/.test(movie.ano_de_producao)) {
         return `Use quatro dígitos no ano da página ${page.originalPageNumber}.`;
       }
-      if (!movie.data) return `Informe a data na página ${page.originalPageNumber}.`;
+      if (!movie.data && !isStd(movie)) return `Informe a data na página ${page.originalPageNumber}.`;
     }
   }
   return "";

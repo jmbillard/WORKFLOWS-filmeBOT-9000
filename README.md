@@ -21,7 +21,7 @@ A janela cresce automaticamente da fase de envio para as demais assim que o proc
 - **Envio de imagens junto com cada página**: a página completa em JPEG e os posters de cada filme recortados em ordem de leitura (veja abaixo).
 - **Pôster de cada filme**: o recorte que fica logo acima do título do filme na página vira o pôster dele (se não achar o título e a página tiver um pôster por filme, vai pela ordem). A miniatura aparece no card; clicar nela abre os pôsteres da página para trocar, ou basta clicar no pôster no preview. No hover do card, o pôster dele acende no preview.
 - **Grade igual à página**: os cards seguem a ordem dos pôsteres da página e, no lugar de um pôster sem filme (cancelado ou fora da agenda, que a extração ignora), entra um card fantasma com o pôster apagado e o texto que está embaixo dele. "incluir" transforma o fantasma em filme, com título, ano e pôster.
-- **Conferência antes do envio** (`CHECK_ON_SAVE_WEBHOOK`, pelo mesmo webhook do envio): cada filme mostra o que o envio vai fazer — no acervo / filme novo, ano diferente do acervo (com "usar" para corrigir), sessão sem cadastro, card que já existe no dia (não é duplicado) e quantas artes são novas e quantas já existem. O topo resume: cards novos, já existentes e filmes novos.
+- **Conferência antes do envio** (desligada; `CHECK_ON_SAVE_WEBHOOK`, pelo mesmo webhook do envio — a conferência das artes fica com o PROMeiro, quando a claquete entra): cada filme mostra o que o envio vai fazer — no acervo / filme novo, ano diferente do acervo (com "usar" para corrigir), sessão sem cadastro, card que já existe no dia (não é duplicado) e quantas artes são novas e quantas já existem. O topo resume: cards novos, já existentes e filmes novos.
 - **Cancelamento e reenvio** de páginas individualmente.
 - **Edição da programação extraída** antes de enviar para o Trello.
 - **Envio final para o Trello** por um webhook separado do de processamento, com mensagem de estado (`save-state-message`).
@@ -51,7 +51,7 @@ O site chama `/api/process`, `/api/save` e `/api/healthcheck`; o `_worker.js` re
 
 ## Revisão
 
-Os cards ficam em cima, na mesma grade da página (as colunas da fileira com mais pôsteres), e o preview embaixo. A Sessão da Tarde aparece também num bloco próprio no topo, com todos os títulos do PDF: é o que vira o card resumo no Trello (títulos a produzir no checklist, os que já existem só na descrição).
+Os cards ficam em cima, na mesma grade da página (as colunas da fileira com mais pôsteres), e o preview embaixo. A Sessão da Tarde é arte padrão (visual fixo): o card dela não mostra data, e um bloco próprio no topo lista os títulos do PDF com o pôster. No Trello vira um card resumo só.
 
 ## Configuração
 

@@ -2137,3 +2137,16 @@ button:disabled {
 .std-summary li.is-done .std-status {
   color: var(--success);
 }
+
+.movie-secondary-fields.is-std {
+  grid-template-columns: minmax(55px, .56fr);
+}
+
+.std-summary li {
+  padding-right: 11px;
+}
+
+.std-summary li img {
+  width: 26px;
+  height: 38px;
+}
