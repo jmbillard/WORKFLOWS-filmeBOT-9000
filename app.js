@@ -9,16 +9,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const CONFIG = Object.freeze({
-  PROCESS_WEBHOOK_URL: "****",
-  SAVE_WEBHOOK_URL: "****",
+  // O worker (_worker.js) repassa /api/* para o n8n: as URLs dos webhooks ficam
+  // só nos segredos do worker, nunca no site.
+  PROCESS_WEBHOOK_URL: "/api/process",
+  SAVE_WEBHOOK_URL: "/api/save",
   // Conferência antes do envio (só leitura), pelo mesmo webhook do envio com
   // { acao: "conferir" }: para cada filme, o que o envio vai fazer — filme do
   // acervo ou novo, ano, sessão, card que já existe e artes que já existem.
-  // Ligar só com o fluxo de cards v10 (o v9 trataria a conferência como envio).
-  CHECK_ON_SAVE_WEBHOOK: false,
+  CHECK_ON_SAVE_WEBHOOK: true,
   CHECK_DEBOUNCE_MS: 700,
   CHECK_TIMEOUT_MS: 15000,
-  HEALTHCHECK_URL: "****",
+  HEALTHCHECK_URL: "/api/healthcheck",
   FILE_FIELD_NAME: "page",
   SEND_INTERVAL_MS: 2500,
   PROCESS_TIMEOUT_MS: 240000,
@@ -120,6 +121,7 @@ const elements = {
   progressTrack: document.querySelector("#progress-track"),
   progressBar: document.querySelector("#progress-bar"),
   pageGroups: document.querySelector("#page-groups"),
+  stdSummary: document.querySelector("#std-summary"),
   saveButton: document.querySelector("#save-button"),
   saveStateMessage: document.querySelector("#save-state-message"),
   retryAllButton: document.querySelector("#retry-all-button"),
@@ -933,6 +935,69 @@ function renderPageGroup() {
   elements.pageGroups.replaceChildren();
   const page = getSelectedPage();
   if (page) elements.pageGroups.append(createPageGroup(page));
+  renderStdSummary();
+}
+
+/* ---------------------------------------------------------
+   Sessão da Tarde: todos os títulos do PDF num bloco só, como o
+   card resumo que vai para o Trello (os títulos a produzir no
+   checklist, os que já existem só na descrição)
+   --------------------------------------------------------- */
+
+const isStd = movie => /^SESS[ÃA]O\s*DA\s*TARDE$/i.test(movie.sessao.trim());
+
+function renderStdSummary() {
+  const box = elements.stdSummary;
+  if (!box) return;
+  const items = state.pages
+    .filter(page => page.status === PAGE_STATUS.SUCCESS)
+    .flatMap(page => page.movies.filter(isStd).map(movie => ({ page, movie })))
+    .sort((a, b) => String(a.movie.data).localeCompare(String(b.movie.data)));
+  box.replaceChildren();
+  box.hidden = !items.length;
+  if (!items.length) return;
+  const rows = items.map(item => ({ ...item, check: state.checks.get(item.movie.id) }));
+  const toMake = rows.filter(row => !row.check || (row.check.artes_novas || []).includes((row.check.artes || [])[0]));
+  const header = document.createElement("header");
+  const title = document.createElement("h3");
+  title.textContent = "Sessão da Tarde";
+  const meta = document.createElement("span");
+  meta.textContent = `${rows.length} ${rows.length === 1 ? "título" : "títulos"} · ${toMake.length} a produzir · um card só no Trello`;
+  header.append(title, meta);
+  const list = document.createElement("ol");
+  for (const row of rows) {
+    const li = document.createElement("li");
+    const done = row.check && !toMake.includes(row);
+    li.classList.toggle("is-done", Boolean(done));
+    const poster = row.page.images?.posters[row.movie.poster];
+    if (poster) {
+      const image = document.createElement("img");
+      image.src = poster.url;
+      image.alt = "";
+      li.append(image);
+    }
+    const date = document.createElement("time");
+    date.textContent = row.movie.data ? row.movie.data.slice(8, 10) + "/" + row.movie.data.slice(5, 7) : "--/--";
+    const name = document.createElement("button");
+    name.type = "button";
+    name.className = "std-title";
+    name.textContent = row.movie.titulo + (row.movie.ano_de_producao ? ` (${row.movie.ano_de_producao})` : "");
+    name.title = `Ver na página ${row.page.originalPageNumber}`;
+    name.addEventListener("click", () => {
+      selectPage(row.page.originalPageNumber);
+      requestAnimationFrame(() => {
+        const card = document.querySelector(`[data-movie-card="${row.movie.id}"]`);
+        card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        card?.classList.add("is-flash");
+      });
+    });
+    const status = document.createElement("span");
+    status.className = "std-status";
+    status.textContent = !row.check ? "" : done ? "✓ já existe" : row.check.novo ? "filme novo" : "a produzir";
+    li.append(date, name, status);
+    list.append(li);
+  }
+  box.append(header, list);
 }
 
 function createPageGroup(page) {
@@ -978,6 +1043,8 @@ function createPageGroup(page) {
   if (page.status === PAGE_STATUS.SUCCESS) {
     const grid = document.createElement("div");
     grid.className = "movie-grid";
+    const columns = pageColumns(page);
+    if (columns) grid.style.setProperty("--page-columns", String(columns));
     grid.append(...layoutItems(page).map(item => item.movie
       ? createMovieCard(page, item.movie)
       : createGhostCard(page, item.poster)));
@@ -1030,6 +1097,21 @@ function layoutItems(page) {
     return movie ? { movie } : { poster: index };
   });
   return items.concat(page.movies.filter(movie => !posters[movie.poster]).map(movie => ({ movie })));
+}
+
+// Quantos pôsteres a fileira mais cheia da página tem: a grade de cards usa
+// essas colunas, para cada card ficar na mesma coluna do seu pôster.
+function pageColumns(page) {
+  const posters = page.images?.posters || [];
+  if (!posters.length) return 0;
+  const rows = [];
+  for (const { box } of posters) {
+    const center = box.y + box.height / 2;
+    const row = rows.find(item => center >= item.top && center <= item.bottom);
+    if (row) row.count += 1;
+    else rows.push({ top: box.y, bottom: box.y + box.height, count: 1 });
+  }
+  return Math.max(...rows.map(row => row.count));
 }
 
 // O texto logo abaixo do pôster na página (título, "CANCELADO"...), para o fantasma.
@@ -1547,7 +1629,7 @@ async function posterDataUrl(blob) {
    --------------------------------------------------------- */
 
 function isCheckEnabled() {
-  return CONFIG.CHECK_ON_SAVE_WEBHOOK && /^https?:\/\//.test(CONFIG.SAVE_WEBHOOK_URL);
+  return CONFIG.CHECK_ON_SAVE_WEBHOOK && Boolean(CONFIG.SAVE_WEBHOOK_URL) && !CONFIG.SAVE_WEBHOOK_URL.includes("****");
 }
 
 function scheduleCheck() {
@@ -1611,6 +1693,7 @@ function updateCheckViews() {
     if (found) fillCheck(element, found.page, found.movie);
   }
   renderQueueState(getCounts());
+  renderStdSummary();
 }
 
 function findMovie(movieId) {
@@ -1790,7 +1873,7 @@ async function checkWorkflowHealth() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.HEALTHCHECK_TIMEOUT_MS);
   try {
-    const url = new URL(CONFIG.HEALTHCHECK_URL);
+    const url = new URL(CONFIG.HEALTHCHECK_URL, window.location.origin);
     url.searchParams.set("_healthcheck", Date.now().toString());
     const response = await fetch(url, {
       headers: { Accept: "application/json" },

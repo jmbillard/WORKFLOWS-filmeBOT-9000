@@ -1999,3 +1999,141 @@ button:disabled {
 .ghost-body .check-apply:focus-visible {
   opacity: 1;
 }
+
+/* =========================================================
+   Revisão: cards em cima (na grade da página), preview embaixo
+   ========================================================= */
+
+@media (min-width:901px) {
+  .app-shell.phase-review .workspace {
+    grid-template-columns: 100%;
+    grid-template-rows: auto minmax(300px, 1fr);
+  }
+
+  .app-shell.phase-review .results-side {
+    grid-row: 1;
+    grid-column: 1;
+    max-height: 48vh;
+    padding: 16px 22px 18px;
+    border-bottom: 1px solid var(--border);
+    transform: none;
+  }
+
+  .app-shell.phase-review .source-side {
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  .app-shell.phase-review .results-toolbar {
+    top: -16px;
+    margin: -16px -22px 0;
+    padding: 16px 22px 10px;
+  }
+
+  .app-shell.phase-review .movie-grid {
+    grid-template-columns: repeat(var(--page-columns, 2), minmax(0, 1fr));
+  }
+}
+
+/* =========================================================
+   Sessão da Tarde: um bloco só (o card resumo do Trello)
+   ========================================================= */
+
+.std-summary {
+  margin: 0 0 12px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff7ec, #fff 60%);
+  animation: picker-in .3s var(--ease-enter) both;
+}
+
+.std-summary header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.std-summary h3 {
+  margin: 0;
+  color: #b5541c;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.std-summary header span {
+  color: var(--text-tertiary);
+  font-size: .56rem;
+  font-weight: 650;
+}
+
+.std-summary ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.std-summary li {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: #fff;
+}
+
+.std-summary li img {
+  width: 18px;
+  height: 26px;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.std-summary time {
+  color: var(--text-tertiary);
+  font-size: .54rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.std-title {
+  overflow: hidden;
+  max-width: 260px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.std-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.std-status {
+  color: #b5541c;
+  font-size: .5rem;
+  font-weight: 750;
+}
+
+.std-summary li.is-done {
+  opacity: .55;
+}
+
+.std-summary li.is-done .std-status {
+  color: var(--success);
+}

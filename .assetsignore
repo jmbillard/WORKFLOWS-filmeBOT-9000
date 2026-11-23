@@ -2,3 +2,4 @@ _worker.js
 wrangler.jsonc
 .git
 .git/**
+README.md

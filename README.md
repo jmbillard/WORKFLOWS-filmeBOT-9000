@@ -45,6 +45,14 @@ Carregadas via CDN (`cdnjs`), sem necessidade de build:
 - **PDF.js** — renderização das páginas do PDF no `<canvas>`.
 - **pdf-lib** — manipulação/leitura do PDF (separação de páginas).
 
+## Webhooks escondidos (worker)
+
+O site chama `/api/process`, `/api/save` e `/api/healthcheck`; o `_worker.js` repassa para o n8n. As URLs dos webhooks ficam só nos segredos do worker na Cloudflare (`N8N_PROCESS_WEBHOOK_URL`, `N8N_SAVE_WEBHOOK_URL`, `N8N_HEALTHCHECK_URL`), nunca no repositório nem no site. Para publicar: `npx wrangler deploy` (o `wrangler.jsonc` aponta para o worker `fimebot-9000`).
+
+## Revisão
+
+Os cards ficam em cima, na mesma grade da página (as colunas da fileira com mais pôsteres), e o preview embaixo. A Sessão da Tarde aparece também num bloco próprio no topo, com todos os títulos do PDF: é o que vira o card resumo no Trello (títulos a produzir no checklist, os que já existem só na descrição).
+
 ## Configuração
 
 Os parâmetros ficam no topo do `app.js`, no objeto `CONFIG`:

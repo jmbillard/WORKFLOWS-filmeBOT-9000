@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // o worker serve os arquivos e repassa /api/* para o n8n; as URLs dos webhooks
+  // ficam só nos segredos do worker (N8N_PROCESS_WEBHOOK_URL, N8N_SAVE_WEBHOOK_URL, N8N_HEALTHCHECK_URL)
+  "name": "fimebot-9000",
+  "main": "./_worker.js",
+  "compatibility_date": "2026-09-03",
+  "observability": { "enabled": true },
+  "assets": { "directory": ".", "binding": "ASSETS" }
+}
