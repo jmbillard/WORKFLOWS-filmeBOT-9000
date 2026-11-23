@@ -2608,3 +2608,160 @@ button:disabled {
     display: none;
   }
 }
+
+
+/* =========================================================
+   Cards mais baixos: pôster maior, campos compactos
+   ========================================================= */
+
+.page-selector {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.page-selector > span:first-child {
+  display: inline;
+}
+
+.page-meta {
+  display: inline;
+  margin: 0;
+}
+
+.page-meta::before {
+  content: "•";
+  margin-right: 6px;
+  color: var(--text-tertiary);
+}
+
+.page-group-header {
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+.movie-grid {
+  gap: 8px;
+  padding: 8px 9px;
+}
+
+.movie-card {
+  padding: 8px;
+}
+
+.movie-card.has-poster {
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.poster-thumb {
+  width: 82px;
+}
+
+.field {
+  gap: 2px;
+}
+
+.field label {
+  font-size: .45rem;
+}
+
+.field input,
+.session-select,
+.session-field input {
+  min-height: 26px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  font-size: .6rem;
+}
+
+.title-input {
+  font-size: .64rem !important;
+}
+
+.movie-title-field,
+.movie-secondary-fields {
+  margin-top: 4px;
+}
+
+.movie-secondary-fields {
+  grid-template-columns: minmax(46px, .42fr) minmax(0, 1.58fr);
+}
+
+.premiere-field {
+  min-height: 26px;
+  padding-bottom: 4px;
+}
+
+/* o ícone do calendário cabe inteiro no campo de data */
+.field input[type=date] {
+  padding-right: 4px;
+  padding-left: 6px;
+  font-size: .56rem;
+}
+
+.field input[type=date]::-webkit-calendar-picker-indicator {
+  margin: 0 0 0 2px;
+  padding: 0;
+}
+
+
+/* fantasma acompanha o pôster maior */
+.movie-card.is-ghost {
+  grid-template-columns: 82px minmax(0, 1fr);
+}
+
+/* excluir: só um × vermelho no canto, sem fundo nem sombra */
+.remove-movie-button {
+  width: 18px;
+  height: 18px;
+  top: 4px;
+  right: 4px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.remove-movie-button::before,
+.remove-movie-button::after {
+  width: 10px;
+  height: 1.8px;
+}
+
+.remove-movie-button:hover {
+  background: none;
+  transform: scale(1.2);
+}
+
+
+.more-actions {
+  display: grid;
+  width: 34px;
+  padding: 0 !important;
+  place-items: center;
+}
+
+.more-actions::-webkit-details-marker {
+  display: none;
+}
+
+
+/* rótulos alinhados com o texto de dentro dos campos; "Inédito" mais à direita */
+.field label {
+  padding-left: 7px;
+}
+
+.movie-top-row {
+  padding-right: 4px;
+}
+
+.premiere-field {
+  justify-self: end;
+}
+
+
+/* três pontinhos antes do "Enviar para o Trello" */
+.queue-actions .actions-menu {
+  order: -1;
+}

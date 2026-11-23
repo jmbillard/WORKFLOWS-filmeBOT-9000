@@ -1176,7 +1176,9 @@ function createPageGroup(page) {
   name.textContent = `Página ${page.originalPageNumber}`;
   const meta = document.createElement("span");
   meta.className = "page-meta";
-  meta.textContent = `Página útil ${page.usefulPageNumber} · ${formatAttempts(page.attempts)}`;
+  meta.textContent = page.status === PAGE_STATUS.SUCCESS
+    ? `${page.movies.length} ${page.movies.length === 1 ? "filme identificado" : "filmes identificados"}`
+    : `${formatAttempts(page.attempts)}`;
   title.append(name, meta);
   nav.append(previous, title, next);
   const actions = document.createElement("div");
@@ -1204,7 +1206,8 @@ function createPageGroup(page) {
   const message = document.createElement("p");
   message.className = "page-message";
   message.textContent = page.message;
-  group.append(message);
+  // com a página pronta, a contagem já está no cabeçalho
+  if (page.status !== PAGE_STATUS.SUCCESS) group.append(message);
 
   if (page.status === PAGE_STATUS.SUCCESS) {
     const grid = document.createElement("div");
