@@ -49,6 +49,12 @@ Carregadas via CDN (`cdnjs`), sem necessidade de build:
 
 O site chama `/api/process`, `/api/save` e `/api/healthcheck`; o `_worker.js` repassa para o n8n. As URLs dos webhooks ficam só nos segredos do worker na Cloudflare (`N8N_PROCESS_WEBHOOK_URL`, `N8N_SAVE_WEBHOOK_URL`, `N8N_HEALTHCHECK_URL`), nunca no repositório nem no site. Para publicar: `npx wrangler deploy` (o `wrangler.jsonc` aponta para o worker `fimebot-9000`).
 
+Para conferir o worker publicado: abra `/api/status` no site. Ele diz se o worker está no ar e quais segredos existem (só sim/não, nunca a URL). Se a página der erro de HTTP, o FilmeBOT diz de onde veio: site sem o worker, segredo faltando ou webhook que o n8n não achou.
+
+## Processamento
+
+Enquanto as páginas são lidas, o preview é uma grade com as páginas pequenas: o scanner passa duas vezes em cada página enviada e depois fica o loader até o n8n responder.
+
 ## Revisão
 
 Os cards ficam em cima, na mesma grade da página (as colunas da fileira com mais pôsteres), e o preview embaixo. A Sessão da Tarde é arte padrão (visual fixo): o card dela não mostra data, e um bloco próprio no topo lista os títulos do PDF com o pôster. No Trello vira um card resumo só.

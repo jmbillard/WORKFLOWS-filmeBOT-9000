@@ -2304,3 +2304,125 @@ button:disabled {
 .std-add {
   border-radius: 10px;
 }
+
+/* =========================================================
+   Processamento: grade com as páginas pequenas e o scanner em cada uma
+   ========================================================= */
+
+.page-thumbs {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  align-content: start;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 4px 2px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  scrollbar-width: none;
+}
+
+.page-thumbs[hidden] {
+  display: none;
+}
+
+.page-thumb {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  animation: picker-in .4s var(--ease-enter) both;
+}
+
+.page-thumb-sheet {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgb(255 255 255/14%);
+  box-shadow: 0 10px 26px rgb(20 30 80/22%);
+  transition: transform .25s var(--ease-soft), opacity .3s, filter .3s, box-shadow .25s;
+}
+
+.page-thumb canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.page-thumb[data-status="waiting"] .page-thumb-sheet {
+  opacity: .55;
+  filter: saturate(.4);
+}
+
+.page-thumb[data-status="error"] .page-thumb-sheet {
+  box-shadow: 0 0 0 2px #ff8a8a, 0 10px 26px rgb(20 30 80/22%);
+}
+
+.page-thumb:hover .page-thumb-sheet,
+.page-thumb.is-selected .page-thumb-sheet {
+  transform: translateY(-2px);
+}
+
+.page-thumb.is-selected .page-thumb-sheet {
+  box-shadow: 0 0 0 2px #fff, 0 14px 30px rgb(20 30 80/30%);
+}
+
+.page-thumb-beam {
+  position: absolute;
+  top: -7px;
+  left: 0;
+  display: none;
+  width: 100%;
+  height: 3px;
+  background: #fff;
+  box-shadow: 0 0 8px #fff, 0 0 18px var(--blue-500), 0 10px 28px rgb(81 132 248/42%);
+}
+
+/* duas passadas (desce e sobe) quando a página é enviada */
+.page-thumb.is-scanning .page-thumb-beam {
+  display: block;
+  animation: scan 1.4s ease-in-out 2 alternate both;
+}
+
+.page-thumb-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  background: rgb(20 26 40/30%);
+  opacity: 0;
+  place-items: center;
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+
+.page-thumb.is-loading .page-thumb-loader {
+  opacity: 1;
+}
+
+.page-thumb-loader i {
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgb(255 255 255/30%);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+.page-thumb-label {
+  font-size: .58rem;
+  font-weight: 750;
+  letter-spacing: .02em;
+  opacity: .9;
+}
+
+.page-thumb[data-status="success"] .page-thumb-label::before {
+  content: "✓ ";
+}
+
+.page-thumb[data-status="error"] .page-thumb-label {
+  color: #ffd2d2;
+}

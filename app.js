@@ -89,6 +89,17 @@ const state = {
   checkSeq: 0
 };
 
+// miniaturas da grade de processamento (uma por página)
+const thumbs = new Map();
+
+const THUMB_LABEL = {
+  [PAGE_STATUS.WAITING]: "na fila",
+  [PAGE_STATUS.PROCESSING]: "lendo…",
+  [PAGE_STATUS.SUCCESS]: "pronta",
+  [PAGE_STATUS.ERROR]: "erro",
+  [PAGE_STATUS.CANCELLED]: "cancelada"
+};
+
 let previewResizeTimer = null;
 let previewTicket = 0;
 let previewRendering = Promise.resolve();
@@ -109,6 +120,7 @@ const elements = {
   previewFileName: document.querySelector("#preview-file-name"),
   previewPageLabel: document.querySelector("#preview-page-label"),
   previewStage: document.querySelector("#preview-stage"),
+  pageThumbs: document.querySelector("#page-thumbs"),
   previewCanvas: document.querySelector("#preview-canvas"),
   previewLoading: document.querySelector("#preview-loading"),
   scanOverlay: document.querySelector("#scan-overlay"),
@@ -406,6 +418,8 @@ function shouldRenderPreview() {
 async function renderSelectedPreview() {
   if (!state.pdfDocument || !state.selectedPageNumber ||
     !shouldRenderPreview() || elements.previewView.hidden) return;
+  // durante o processamento o preview é a grade de páginas (renderThumbs)
+  if (state.phase === APP_PHASE.PROCESSING) return;
 
   const selectedPage = getSelectedPage();
   elements.previewPageLabel.textContent = `Página ${state.selectedPageNumber}`;
@@ -583,6 +597,7 @@ async function processPage(page) {
   page.message = "Lendo o conteúdo da página…";
   page.attempts += 1;
   page.hasScanned = false;
+  page.thumbScanned = false;
   page.startedAt = Date.now();
   state.selectedPageNumber = page.originalPageNumber;
   setPhase(APP_PHASE.PROCESSING);
@@ -611,7 +626,7 @@ async function processPage(page) {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(extractErrorMessage(text) || `O workflow retornou HTTP ${response.status}.`);
+      throw new Error(extractErrorMessage(text) || explainHttpError(response, "N8N_PROCESS_WEBHOOK_URL"));
     }
 
     const result = parsePageResponse(text);
@@ -870,6 +885,81 @@ function canvasToJpeg(canvas) {
   });
 }
 
+/* ---------------------------------------------------------
+   Processamento: grade com as páginas pequenas, cada uma com o
+   scanner (duas passadas) e o loader enquanto o n8n lê
+   --------------------------------------------------------- */
+
+function renderThumbs() {
+  const box = elements.pageThumbs;
+  if (!box) return;
+  // páginas que saíram (outro PDF): somem da grade
+  for (const [id, thumb] of thumbs) {
+    if (!state.pages.some(page => page.id === id)) { thumb.element.remove(); thumbs.delete(id); }
+  }
+  const processing = state.phase === APP_PHASE.PROCESSING && state.pages.length > 0;
+  box.hidden = !processing;
+  elements.previewStage.hidden = processing;
+  if (!processing) return;
+  for (const page of state.pages) {
+    let thumb = thumbs.get(page.id);
+    if (!thumb) {
+      thumb = createThumb(page);
+      thumbs.set(page.id, thumb);
+      box.append(thumb.element);
+    }
+    const { element, beam, label } = thumb;
+    element.dataset.status = page.status;
+    element.classList.toggle("is-selected", page.originalPageNumber === state.selectedPageNumber);
+    const scanning = page.status === PAGE_STATUS.PROCESSING && !page.thumbScanned;
+    if (scanning && !element.classList.contains("is-scanning")) {
+      element.classList.remove("is-scanning");
+      void beam.offsetWidth;
+    }
+    element.classList.toggle("is-scanning", scanning);
+    element.classList.toggle("is-loading", page.status === PAGE_STATUS.PROCESSING && Boolean(page.thumbScanned));
+    label.textContent = `Página ${page.originalPageNumber} · ${THUMB_LABEL[page.status] || ""}`;
+  }
+}
+
+function createThumb(page) {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "page-thumb";
+  element.addEventListener("click", () => selectPage(page.originalPageNumber));
+  const sheet = document.createElement("span");
+  sheet.className = "page-thumb-sheet";
+  const canvas = document.createElement("canvas");
+  const beam = document.createElement("span");
+  beam.className = "page-thumb-beam";
+  beam.addEventListener("animationend", () => {
+    page.thumbScanned = true;
+    renderThumbs();
+  });
+  const loader = document.createElement("span");
+  loader.className = "page-thumb-loader";
+  loader.append(document.createElement("i"));
+  sheet.append(canvas, beam, loader);
+  const label = document.createElement("span");
+  label.className = "page-thumb-label";
+  element.append(sheet, label);
+  drawThumb(page, canvas);
+  return { element, beam, label };
+}
+
+async function drawThumb(page, canvas) {
+  try {
+    const pdfPage = await state.pdfDocument.getPage(page.originalPageNumber);
+    const base = pdfPage.getViewport({ scale: 1 });
+    const viewport = pdfPage.getViewport({ scale: 480 / base.width });
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    await pdfPage.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  } catch (error) {
+    console.warn("[Miniatura]", error);
+  }
+}
+
 function parsePageResponse(text) {
   if (!text.trim()) throw new Error("O workflow retornou resposta vazia.");
   let data;
@@ -910,6 +1000,7 @@ function render() {
   renderPageGroup();
   renderSaveState();
   renderPosterMarks();
+  renderThumbs();
   if (state.sourceFile) {
     elements.previewFileName.textContent = state.sourceFile.name;
     elements.previewPageLabel.textContent = `Página ${state.selectedPageNumber}`;
@@ -1697,7 +1788,7 @@ async function saveResults() {
     });
     const text = await response.text();
     // Qualquer status fora de 200-299 (500, etc.) cai aqui como erro.
-    if (!response.ok) throw new Error(extractErrorMessage(text) || `HTTP ${response.status}`);
+    if (!response.ok) throw new Error(extractErrorMessage(text) || explainHttpError(response, "N8N_SAVE_WEBHOOK_URL"));
     const result = parseSaveResponse(text);
     if (!result.success) throw new Error(result.message || "Não foi possível salvar.");
     state.isDirty = false;
@@ -2113,6 +2204,17 @@ function hasActivePages() {
   return state.pages.some(page =>
     [PAGE_STATUS.WAITING, PAGE_STATUS.PROCESSING].includes(page.status)
   );
+}
+
+// Diz de onde veio o erro: do site sem o worker, de um segredo ou do próprio n8n.
+function explainHttpError(response, secret) {
+  if (!response.headers.get("x-filmebot-worker")) {
+    return `O site está sem o worker (_worker.js) que fala com o n8n (HTTP ${response.status}). Publique de novo com o publicar.sh.`;
+  }
+  if (response.headers.get("x-filmebot-origem") === "n8n" && response.status === 404) {
+    return `O n8n não achou o webhook (HTTP 404): confira a URL no segredo ${secret} (/webhook/, não /webhook-test/) e se o fluxo está ativo.`;
+  }
+  return `O workflow retornou HTTP ${response.status}.`;
 }
 
 function extractErrorMessage(text) {
