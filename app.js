@@ -84,6 +84,7 @@ const state = {
   checks: new Map(),
   sessions: new Set(),
   pickingMovieId: null,
+  choosingMovieId: null, // o filme com a escolha "qual filme?" aberta
   checkTimer: null,
   checkSeq: 0
 };
@@ -1565,7 +1566,10 @@ function createPosterThumb(page, movie) {
     const image = document.createElement("img");
     image.src = poster.url;
     image.alt = "";
-    button.append(image);
+    const badge = document.createElement("em");
+    badge.className = "poster-number";
+    badge.textContent = movie.poster + 1;
+    button.append(image, badge);
     button.title = "Trocar o pôster";
     button.setAttribute("aria-label", `Trocar o pôster de ${movie.titulo || "filme"}`);
   } else {
@@ -1599,7 +1603,12 @@ function createPosterPicker(page, movie) {
     const image = document.createElement("img");
     image.src = poster.url;
     image.alt = "";
-    option(index, image, `Pôster ${index + 1}`);
+    const badge = document.createElement("em");
+    badge.className = "poster-number";
+    badge.textContent = index + 1;
+    const content = document.createDocumentFragment();
+    content.append(image, badge);
+    option(index, content, `Pôster ${index + 1}`);
   });
   option(null, document.createTextNode("sem"), "Sem pôster");
   const hint = document.createElement("p");
@@ -1654,6 +1663,9 @@ function renderPosterMarks() {
     mark.type = "button";
     mark.className = "poster-mark";
     mark.dataset.markIndex = String(index);
+    const number = document.createElement("em");
+    number.textContent = index + 1;
+    mark.append(number);
     const owner = page.movies.find(movie => movie.poster === index);
     if (owner) {
       mark.classList.add("is-linked");
@@ -2144,11 +2156,16 @@ function fillCheck(element, page, movie) {
   const row = state.checks.get(movie.id);
   const existing = Boolean(row?.card_existente);
   const choose = needsChoice(movie, row) || Boolean(movie.filme_id && row?.opcoes?.length > 1);
+  const card = element.closest(".movie-card");
   element.replaceChildren();
   element.hidden = !existing && !choose;
-  element.closest(".movie-card")?.classList.toggle("is-existing", existing);
-  element.closest(".movie-card")?.classList.toggle("is-ambiguous", needsChoice(movie, row));
-  if (choose) element.append(createFilmChoice(movie, row));
+  card?.classList.toggle("is-existing", existing);
+  card?.classList.toggle("is-ambiguous", needsChoice(movie, row));
+  card?.querySelector(":scope > .film-choice")?.remove();
+  if (choose) {
+    element.append(createFilmChip(movie, row));
+    if (state.choosingMovieId === movie.id && card) openFilmChoice(card, movie, row);
+  }
   if (!existing) return;
   const chip = document.createElement(/^https?:/.test(row.card_existente) ? "a" : "span");
   chip.className = "check-chip is-trello";
@@ -2163,32 +2180,149 @@ function needsChoice(movie, row) {
   return Boolean(row?.ambiguo && !movie.filme_id);
 }
 
-function createFilmChoice(movie, row) {
-  const label = document.createElement("label");
-  label.className = "film-choice";
-  const text = document.createElement("span");
-  text.textContent = movie.filme_id ? "filme" : "qual filme?";
-  const select = document.createElement("select");
-  select.className = "session-select film-choice-select";
-  select.setAttribute("aria-label", `Qual filme é ${movie.titulo}`);
-  const options = [["", "escolha…"], ...row.opcoes.map(option => [option.id, `${option.titulo}${option.ano ? ` (${option.ano})` : ""}`]), ["novo", "outro filme (cadastrar)"]];
-  for (const [value, name] of options) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = name;
-    option.selected = value === movie.filme_id;
-    if (!value) option.disabled = true;
-    select.append(option);
+// o botão no card: "qual filme?" (âmbar, falta escolher) ou o filme escolhido; abre a escolha
+function createFilmChip(movie, row) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "film-chip";
+  chip.classList.toggle("is-pending", !movie.filme_id);
+  chip.setAttribute("aria-expanded", String(state.choosingMovieId === movie.id));
+  const chosen = row.opcoes.find(option => option.id === movie.filme_id);
+  const label = document.createElement("span");
+  if (chosen) {
+    chip.append(posterFrame(chosen.poster, ""));
+    label.textContent = `${chosen.titulo}${chosen.ano ? ` (${chosen.ano})` : ""}`;
+  } else {
+    label.textContent = movie.filme_id === "novo" ? "outro filme (novo)" : "qual filme?";
   }
-  if (!movie.filme_id) select.selectedIndex = 0;
-  select.addEventListener("change", () => {
-    movie.filme_id = select.value;
+  chip.append(label);
+  chip.title = chosen ? `${label.textContent}: trocar` : "Mais de um filme do banco tem este título: escolher qual é";
+  chip.addEventListener("click", event => {
+    event.stopPropagation();
+    state.choosingMovieId = state.choosingMovieId === movie.id ? null : movie.id;
+    updateCheckViews();
+  });
+  return chip;
+}
+
+function openFilmChoice(card, movie, row) {
+  const panel = createFilmChoice(movie, row);
+  card.append(panel);
+  // abre para cima quando não cabe embaixo (o preview do PDF fica fixo no pé da tela)
+  const bottom = document.querySelector("#preview-view")?.getBoundingClientRect().top || window.innerHeight;
+  const box = panel.getBoundingClientRect();
+  if (box.bottom > Math.min(bottom, window.innerHeight) - 8) panel.classList.add("is-up");
+  if (box.right > window.innerWidth - 16) panel.classList.add("is-right");
+}
+
+document.addEventListener("click", () => closeFilmChoice());
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeFilmChoice(); });
+
+function closeFilmChoice() {
+  if (!state.choosingMovieId) return;
+  state.choosingMovieId = null;
+  updateCheckViews();
+}
+
+// a escolha lado a lado: o pôster do PDF (com o número dele na página) e o de cada filme do banco
+function createFilmChoice(movie, row) {
+  const found = findMovie(movie.id);
+  const box = document.createElement("div");
+  box.className = "film-choice";
+  box.classList.toggle("is-pending", !movie.filme_id);
+  const head = document.createElement("p");
+  head.className = "film-choice-head";
+  head.textContent = movie.filme_id ? "filme" : "qual filme é?";
+  const hint = document.createElement("span");
+  hint.textContent = movie.filme_id ? "" : "o título bate com mais de um filme do banco";
+  head.append(hint);
+  const list = document.createElement("div");
+  list.className = "film-choice-list";
+  list.setAttribute("role", "radiogroup");
+  list.setAttribute("aria-label", `Qual filme é ${movie.titulo}`);
+
+  // a referência: o pôster que veio do PDF
+  const ref = document.createElement("div");
+  ref.className = "film-choice-ref";
+  const pdfPoster = found?.page.images?.posters[movie.poster];
+  ref.append(posterFrame(pdfPoster?.url, movie.poster === null ? "" : movie.poster + 1));
+  const refText = document.createElement("small");
+  refText.textContent = "no PDF";
+  ref.append(refText);
+  ref.addEventListener("pointerenter", () => highlightPosterMark(movie.poster));
+  ref.addEventListener("pointerleave", () => highlightPosterMark(null));
+  const versus = document.createElement("span");
+  versus.className = "film-choice-vs";
+  versus.textContent = "=";
+  versus.setAttribute("aria-hidden", "true");
+  list.append(ref, versus);
+
+  const pick = value => {
+    movie.filme_id = value;
+    state.choosingMovieId = null;
     state.isDirty = true;
     renderSaveState();
     scheduleCheck();
-  });
-  label.append(text, select);
-  return label;
+    const element = document.querySelector(`[data-check-for="${movie.id}"]`);
+    if (element && found) fillCheck(element, found.page, movie);
+  };
+  for (const option of row.opcoes) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "film-option";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(movie.filme_id === option.id));
+    button.title = `${option.titulo}${option.ano ? ` (${option.ano})` : ""}`;
+    const name = document.createElement("b");
+    name.textContent = option.titulo;
+    const year = document.createElement("small");
+    year.textContent = option.ano || "sem ano";
+    button.append(posterFrame(option.poster, ""), name, year);
+    button.addEventListener("click", () => pick(option.id));
+    list.append(button);
+  }
+  const fresh = document.createElement("button");
+  fresh.type = "button";
+  fresh.className = "film-option is-new";
+  fresh.setAttribute("role", "radio");
+  fresh.setAttribute("aria-checked", String(movie.filme_id === "novo"));
+  fresh.title = "É outro filme: cadastrar";
+  const plus = document.createElement("span");
+  plus.className = "film-frame is-plus";
+  plus.textContent = "+";
+  const freshName = document.createElement("b");
+  freshName.textContent = "outro filme";
+  const freshNote = document.createElement("small");
+  freshNote.textContent = "cadastrar";
+  fresh.append(plus, freshName, freshNote);
+  fresh.addEventListener("click", () => pick("novo"));
+  list.append(fresh);
+  box.append(head, list);
+  box.addEventListener("click", event => event.stopPropagation());
+  return box;
+}
+
+// um pôster pequeno (ou o ícone de filme), com o número dele na página quando tem
+function posterFrame(url, number) {
+  const frame = document.createElement("span");
+  frame.className = "film-frame";
+  if (url) {
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = "";
+    image.loading = "lazy";
+    image.addEventListener("error", () => { image.remove(); frame.classList.add("is-empty"); });
+    frame.append(image);
+  } else {
+    frame.classList.add("is-empty");
+  }
+  if (number) {
+    const badge = document.createElement("em");
+    badge.className = "poster-number";
+    badge.textContent = number;
+    frame.append(badge);
+  }
+  return frame;
 }
 
 function applySuggestion(button) {
