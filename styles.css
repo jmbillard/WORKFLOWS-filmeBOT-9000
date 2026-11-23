@@ -2286,3 +2286,21 @@ button:disabled {
   font: inherit;
   font-size: .62rem;
 }
+
+/* Sessão da Tarde: embaixo dos cards, em retângulos de cantos arredondados (o pôster cabe inteiro) */
+.std-summary {
+  margin: 12px 0 0;
+}
+
+.std-summary li {
+  padding: 4px 6px 4px 4px;
+  border-radius: 10px;
+}
+
+.std-summary li img {
+  border-radius: 6px;
+}
+
+.std-add {
+  border-radius: 10px;
+}
