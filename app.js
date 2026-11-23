@@ -1860,8 +1860,8 @@ function renderSaveState() {
   if (state.pages.some(page => page.status === PAGE_STATUS.ERROR)) {
     return showSaveMessage("Reenvie as páginas com erro antes de salvar.", "error");
   }
-  if (!state.isDirty) return showSaveMessage("Todas as alterações estão salvas.", "success");
-  showSaveMessage("Revise os filmes e salve as alterações.", "info");
+  // só os erros aparecem: avisos de rotina ocupavam espaço sem dizer nada novo
+  hideSaveMessage();
 }
 
 function showSaveMessage(message, type = "info") {

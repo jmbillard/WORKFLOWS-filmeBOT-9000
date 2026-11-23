@@ -2153,27 +2153,21 @@ button:disabled {
 
 /* revisão: o preview ocupa a largura toda, de ponta a ponta, e rola */
 @media (min-width:901px) {
-  .app-shell.phase-review .preview-view {
-    padding-right: 0;
-    padding-left: 0;
-  }
-
-  .app-shell.phase-review .preview-view > :not(.preview-stage) {
-    padding-right: 28px;
-    padding-left: 28px;
-  }
-
+  /* margens iguais dos dois lados, cantos arredondados e rolagem sem barra visível */
   .app-shell.phase-review .preview-stage {
     display: block;
     width: 100%;
-    margin: 0;
     padding: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    border-radius: 0;
+    border-radius: 17px;
     background: none;
-    box-shadow: none;
-    scrollbar-gutter: stable;
+    box-shadow: 0 14px 35px rgb(25 45 108/14%);
+    scrollbar-width: none;
+  }
+
+  .app-shell.phase-review .preview-stage::-webkit-scrollbar {
+    display: none;
   }
 
   .app-shell.phase-review #preview-canvas {
