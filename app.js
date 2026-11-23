@@ -9,18 +9,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const CONFIG = Object.freeze({
-  // O worker (_worker.js) repassa /api/* para o n8n: as URLs dos webhooks ficam
-  // só nos segredos do worker, nunca no site.
-  PROCESS_WEBHOOK_URL: "/api/process",
-  SAVE_WEBHOOK_URL: "/api/save",
+  // as URLs dos webhooks não ficam no repositório: preencha só na cópia publicada
+  PROCESS_WEBHOOK_URL: "****",
+  SAVE_WEBHOOK_URL: "****",
   // Conferência antes do envio (só leitura), pelo mesmo webhook do envio com
   // { acao: "conferir" }: para cada filme, o que o envio vai fazer — filme do
   // acervo ou novo, ano, sessão, card que já existe e artes que já existem.
-  // desligada: a conferência das artes é feita pelo PROMeiro quando a claquete entra
+  // na tela, só serve para marcar o filme que já tem card (mesmo filme, sessão e dia)
   CHECK_ON_SAVE_WEBHOOK: true,
   CHECK_DEBOUNCE_MS: 700,
   CHECK_TIMEOUT_MS: 15000,
-  HEALTHCHECK_URL: "/api/healthcheck",
+  HEALTHCHECK_URL: "****",
   FILE_FIELD_NAME: "page",
   SEND_INTERVAL_MS: 2500,
   PROCESS_TIMEOUT_MS: 240000,
