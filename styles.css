@@ -2176,3 +2176,113 @@ button:disabled {
     box-shadow: none;
   }
 }
+
+/* Sessão da Tarde: o título se revisa direto na lista */
+.std-summary li {
+  position: relative;
+  gap: 4px;
+  padding: 3px 4px 3px 3px;
+  transition: border-color .16s, box-shadow .16s;
+}
+
+.std-summary li:focus-within {
+  border-color: var(--blue-400);
+  box-shadow: 0 0 0 3px rgb(81 132 248/12%);
+}
+
+.std-input {
+  field-sizing: content;
+  min-width: 9ch;
+  max-width: 320px;
+  padding: 4px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  outline: none;
+  font: inherit;
+  font-size: .62rem;
+  font-weight: 750;
+}
+
+.std-input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.std-remove {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: .8rem;
+  line-height: 1;
+  opacity: 0;
+  place-items: center;
+  transition: opacity .16s;
+}
+
+.std-summary li:hover .std-remove,
+.std-remove:focus-visible {
+  opacity: 1;
+}
+
+.std-add {
+  align-self: center;
+  padding: 6px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--blue-600);
+  cursor: pointer;
+  font: inherit;
+  font-size: .58rem;
+  font-weight: 750;
+}
+
+.std-add:hover {
+  border-color: var(--blue-400);
+}
+
+/* Sessão: lista das sessões */
+.session-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 31px;
+  padding: 5px 22px 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b94a6' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 8px center,
+    #fff;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  font: inherit;
+  font-size: .62rem;
+  font-weight: 650;
+  appearance: none;
+  text-overflow: ellipsis;
+}
+
+.session-select:focus {
+  border-color: var(--blue-400);
+}
+
+.session-field input {
+  display: block;
+  width: 100%;
+  min-height: 31px;
+  padding: 5px 7px;
+  border: 1px solid var(--blue-400);
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  font-size: .62rem;
+}

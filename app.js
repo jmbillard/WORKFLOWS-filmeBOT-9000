@@ -83,12 +83,15 @@ const state = {
   isDirty: false,
   previewRenderTask: null,
   checks: new Map(),
+  sessions: new Set(),
   pickingMovieId: null,
   checkTimer: null,
   checkSeq: 0
 };
 
 let previewResizeTimer = null;
+let previewTicket = 0;
+let previewRendering = Promise.resolve();
 
 const elements = {
   appShell: document.querySelector("#app-shell"),
@@ -408,12 +411,16 @@ async function renderSelectedPreview() {
   elements.previewPageLabel.textContent = `Página ${state.selectedPageNumber}`;
   elements.previewLoading.hidden = false;
 
-  if (state.previewRenderTask) {
-    try { state.previewRenderTask.cancel(); } catch { }
-  }
+  // uma renderização por vez no mesmo canvas: a nova cancela a anterior, espera
+  // ela parar, e só a mais recente segue
+  const ticket = ++previewTicket;
+  try { state.previewRenderTask?.cancel(); } catch { }
+  try { await previewRendering; } catch { }
+  if (ticket !== previewTicket) return;
 
   try {
     const pdfPage = await state.pdfDocument.getPage(state.selectedPageNumber);
+    if (ticket !== previewTicket) return;
     // na revisão a página ocupa a largura toda (com rolagem); antes disso, cabe inteira
     const fillWidth = state.phase === APP_PHASE.REVIEW;
     const gap = fillWidth ? 0 : 20;
@@ -438,7 +445,8 @@ async function renderSelectedPreview() {
       viewport,
       transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0]
     });
-    await state.previewRenderTask.promise;
+    previewRendering = state.previewRenderTask.promise;
+    await previewRendering;
     animatePreviewCanvas();
     renderPosterMarks();
   } catch (error) {
@@ -611,6 +619,8 @@ async function processPage(page) {
     page.workflowStatus = result.status;
     page.responseId = result.ID;
     page.movies = result.movies.map(normalizeMovie);
+    // as sessões cadastradas (o fluxo manda junto) e as que vieram nos filmes viram as opções do campo
+    for (const name of [...result.sessions, ...page.movies.map(movie => movie.sessao)]) addSession(name);
     assignPosters(page);
     page.status = PAGE_STATUS.SUCCESS;
     page.message = `${page.movies.length} filme(s) identificado(s).`;
@@ -873,7 +883,8 @@ function parsePageResponse(text) {
     path: typeof result.path === "string" ? result.path : "",
     status: typeof result.status === "string" ? result.status : "",
     ID: typeof result.ID === "string" ? result.ID : "",
-    movies: result.movies
+    movies: result.movies,
+    sessions: Array.isArray(result.sessoes) ? result.sessoes.filter(item => typeof item === "string") : []
   };
 }
 
@@ -961,56 +972,95 @@ function renderPageGroup() {
 
 const isStd = movie => /^SESS[ÃA]O\s*DA\s*TARDE$/i.test(movie.sessao.trim());
 
+function stdGroups() {
+  // um título por filme (o mesmo filme pode passar em mais de um dia): editar ou tirar vale para todos
+  const groups = [];
+  for (const page of state.pages.filter(item => item.status === PAGE_STATUS.SUCCESS)) {
+    for (const movie of page.movies.filter(isStd)) {
+      const key = movie.titulo.trim().toUpperCase() || movie.id;
+      const group = groups.find(item => item.key === key);
+      if (group) group.movies.push(movie);
+      else groups.push({ key, page, movies: [movie] });
+    }
+  }
+  return groups;
+}
+
 function renderStdSummary() {
   const box = elements.stdSummary;
   if (!box) return;
-  const items = state.pages
-    .filter(page => page.status === PAGE_STATUS.SUCCESS)
-    .flatMap(page => page.movies.filter(isStd).map(movie => ({ page, movie })))
-    .sort((a, b) => String(a.movie.data).localeCompare(String(b.movie.data)));
+  const groups = stdGroups();
   box.replaceChildren();
-  box.hidden = !items.length;
-  if (!items.length) return;
-  // um título por filme (o mesmo filme pode passar em mais de um dia)
-  const seen = new Set();
-  const rows = items.filter(({ movie }) => {
-    const key = movie.titulo.trim().toUpperCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  box.hidden = !groups.length && !state.pages.some(page => page.status === PAGE_STATUS.SUCCESS);
+  if (box.hidden) return;
   const header = document.createElement("header");
   const title = document.createElement("h3");
   title.textContent = "Sessão da Tarde";
   const meta = document.createElement("span");
-  meta.textContent = `${rows.length} ${rows.length === 1 ? "título" : "títulos"} · um card só no Trello`;
+  meta.textContent = groups.length
+    ? `${groups.length} ${groups.length === 1 ? "título" : "títulos"} · um card só no Trello`
+    : "nenhum título";
   header.append(title, meta);
   const list = document.createElement("ol");
-  for (const row of rows) {
+  for (const group of groups) {
+    const first = group.movies[0];
     const li = document.createElement("li");
-    const poster = row.page.images?.posters[row.movie.poster];
+    li.dataset.stdKey = first.id;
+    const poster = group.page.images?.posters[first.poster];
     if (poster) {
       const image = document.createElement("img");
       image.src = poster.url;
       image.alt = "";
       li.append(image);
     }
-    const name = document.createElement("button");
-    name.type = "button";
-    name.className = "std-title";
-    name.textContent = row.movie.titulo;
-    name.title = `Ver na página ${row.page.originalPageNumber}`;
-    name.addEventListener("click", () => {
-      selectPage(row.page.originalPageNumber);
-      requestAnimationFrame(() => {
-        const card = document.querySelector(`[data-movie-card="${row.movie.id}"]`);
-        card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        card?.classList.add("is-flash");
-      });
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "std-input";
+    input.value = first.titulo;
+    input.placeholder = "Título do filme";
+    input.setAttribute("aria-label", "Título do filme da Sessão da Tarde");
+    input.addEventListener("input", () => {
+      for (const movie of group.movies) movie.titulo = input.value;
+      state.isDirty = true;
+      renderSaveState();
     });
-    li.append(name);
+    input.addEventListener("focus", () => highlightPosterMark(first.poster));
+    input.addEventListener("blur", () => highlightPosterMark(null));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "std-remove";
+    remove.setAttribute("aria-label", `Tirar ${first.titulo || "o título"} da Sessão da Tarde`);
+    remove.title = "Tirar da lista";
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      for (const page of state.pages) page.movies = page.movies.filter(movie => !group.movies.includes(movie));
+      state.isDirty = true;
+      renderPageGroup();
+      renderPosterMarks();
+      renderSaveState();
+    });
+    li.append(input, remove);
+    li.addEventListener("pointerenter", () => highlightPosterMark(first.poster));
+    li.addEventListener("pointerleave", () => highlightPosterMark(null));
     list.append(li);
   }
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "std-add";
+  add.textContent = "+ título";
+  add.title = "Incluir um filme na Sessão da Tarde";
+  add.addEventListener("click", () => {
+    const page = getSelectedPage();
+    const target = page?.status === PAGE_STATUS.SUCCESS ? page : state.pages.find(item => item.status === PAGE_STATUS.SUCCESS);
+    if (!target) return;
+    const movie = { id: createId(), titulo: "", ano_de_producao: "", sessao: "SESSÃO DA TARDE", data: "", inedito: false, poster: null, posterTouched: true };
+    target.movies.push(movie);
+    state.isDirty = true;
+    renderStdSummary();
+    renderSaveState();
+    box.querySelector(`[data-std-key="${movie.id}"] input`)?.focus();
+  });
+  list.append(add);
   box.append(header, list);
 }
 
@@ -1104,13 +1154,15 @@ function createStatusPill(status) {
 // pôster sem filme (cancelado, fora da agenda), um card fantasma. Filmes sem
 // pôster vêm no fim.
 function layoutItems(page) {
+  // a Sessão da Tarde não tem card na grade: o título dela se revisa na lista de cima
   const posters = page.images?.posters || [];
-  if (!posters.length) return page.movies.map(movie => ({ movie }));
-  const items = posters.map((_, index) => {
+  if (!posters.length) return page.movies.filter(movie => !isStd(movie)).map(movie => ({ movie }));
+  const items = posters.flatMap((_, index) => {
     const movie = page.movies.find(item => item.poster === index);
-    return movie ? { movie } : { poster: index };
+    if (movie && isStd(movie)) return [];
+    return [movie ? { movie } : { poster: index }];
   });
-  return items.concat(page.movies.filter(movie => !posters[movie.poster]).map(movie => ({ movie })));
+  return items.concat(page.movies.filter(movie => !posters[movie.poster] && !isStd(movie)).map(movie => ({ movie })));
 }
 
 // Quantos pôsteres a fileira mais cheia da página tem: a grade de cards usa
@@ -1215,7 +1267,7 @@ function createMovieCard(page, movie) {
   card.classList.toggle("has-poster", Boolean(page.images?.posters.length));
   const top = document.createElement("div");
   top.className = "movie-top-row";
-  const session = createTextField(page, movie, "sessao", "Sessão", movie.sessao);
+  const session = createSessionField(page, movie);
   const premiere = document.createElement("label");
   premiere.className = "premiere-field";
   const checkbox = createMovieInput(page, movie, "inedito", "checkbox");
@@ -1371,6 +1423,14 @@ function renderPosterMarks() {
     });
     mark.addEventListener("click", () => {
       if (state.pickingMovieId) return setMoviePoster(state.pickingMovieId, index);
+      const stdInput = owner && isStd(owner)
+        && [...document.querySelectorAll("[data-std-key]")].find(li => stdGroups().some(group => group.movies.includes(owner) && group.movies[0].id === li.dataset.stdKey))?.querySelector("input");
+      if (stdInput) {
+        stdInput.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        stdInput.focus();
+        stdInput.select();
+        return;
+      }
       const target = owner
         ? document.querySelector(`[data-movie-card="${owner.id}"]`)
         : document.querySelector(`[data-ghost-poster="${index}"]`);
@@ -1397,6 +1457,73 @@ function highlightPosterMark(index) {
   for (const mark of elements.posterMarks?.children || []) {
     mark.classList.toggle("is-active", index !== null && mark.dataset.markIndex === String(index));
   }
+}
+
+function addSession(name) {
+  const value = String(name || "").trim().toUpperCase();
+  if (value && value !== "---") state.sessions.add(value);
+}
+
+const NEW_SESSION = "__nova__";
+
+// Sessão: lista das sessões cadastradas, com "+ Nova sessão…" que vira um campo de texto
+function createSessionField(page, movie) {
+  const container = document.createElement("div");
+  container.className = "field session-field";
+  const id = `${page.id}-${movie.id}-sessao`;
+  const label = document.createElement("label");
+  label.htmlFor = id;
+  label.textContent = "Sessão";
+  const select = document.createElement("select");
+  select.id = id;
+  select.className = "session-select";
+  const current = movie.sessao.trim().toUpperCase();
+  const options = [...new Set([...state.sessions, ...(current ? [current] : [])])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  if (!current) select.append(new Option("Escolha a sessão", "", true, true));
+  for (const name of options) select.append(new Option(name, name, false, name === current));
+  select.append(new Option("+ Nova sessão…", NEW_SESSION));
+  select.firstElementChild.disabled = !current;
+  select.addEventListener("change", () => {
+    if (select.value === NEW_SESSION) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = id;
+      input.placeholder = "Nome da sessão";
+      const done = () => {
+        const value = input.value.trim().toUpperCase();
+        if (value) {
+          addSession(value);
+          setMovieSession(movie, value);
+        } else {
+          renderPageGroup();
+        }
+      };
+      input.addEventListener("keydown", event => {
+        if (event.key === "Enter") input.blur();
+        if (event.key === "Escape") { input.value = ""; input.blur(); }
+      });
+      input.addEventListener("blur", done, { once: true });
+      select.replaceWith(input);
+      input.focus();
+      return;
+    }
+    setMovieSession(movie, select.value);
+  });
+  container.append(label, select);
+  return container;
+}
+
+function setMovieSession(movie, value) {
+  const wasStd = isStd(movie);
+  movie.sessao = value;
+  state.isDirty = true;
+  renderSaveState();
+  // entrar ou sair da Sessão da Tarde muda de lugar (card na grade × título na lista de cima)
+  if (wasStd !== isStd(movie) || !document.querySelector(`[data-movie-card="${movie.id}"] .session-select`)) {
+    renderPageGroup();
+    renderPosterMarks();
+  }
+  scheduleCheck();
 }
 
 function createTextField(page, movie, field, label, value, type = "text", className = "") {
